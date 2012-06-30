@@ -96,6 +96,7 @@ void cJSON_Delete(cJSON *c)
 static const char *parse_number(cJSON *item,const char *num)
 {
 	double n=0,sign=1,scale=0;int subscale=0,signsubscale=1;
+	const char *numstart = num;
 
 	/* Could use sscanf for this? */
 	if (*num=='-') sign=-1,num++;	/* Has sign? */
@@ -111,6 +112,9 @@ static const char *parse_number(cJSON *item,const char *num)
 	
 	item->valuedouble=n;
 	item->valueint=(int)n;
+	item->valuestring=(char*)cJSON_malloc(num-numstart+1);
+	memcpy(item->valuestring,numstart,num-numstart);
+	item->valuestring[num-numstart+1] = 0;
 	item->type=cJSON_Number;
 	return num;
 }

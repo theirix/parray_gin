@@ -21,6 +21,8 @@ PG_MODULE_MAGIC;
 
 ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype);
 
+#define NUMERIC_FMT "99999999999999999999999999999999999999.99999999999999999999999999999999999999"
+
 Datum json_object_get_text(PG_FUNCTION_ARGS);
 Datum json_object_get_boolean(PG_FUNCTION_ARGS);
 Datum json_object_get_int(PG_FUNCTION_ARGS);
@@ -236,11 +238,9 @@ Datum json_object_get_numeric(PG_FUNCTION_ARGS)
 		{
 			if (sel->type == cJSON_Number)
 			{
-				result = DirectFunctionCall1(float4_numeric,
-						Float4GetDatum(sel->valuedouble));
-				/*result = OidFunctionCall2(F_NUMERIC_TO_NUMBER,
+				result = OidFunctionCall2(F_NUMERIC_TO_NUMBER,
 						PointerGetDatum(cstring_to_text(sel->valuestring)),
-						PointerGetDatum(cstring_to_text("99999999999999999999999999999999999999.99999999999999999999999999999999999999")));*/
+						PointerGetDatum(cstring_to_text(NUMERIC_FMT)));
 				status = true;
 			}
 		}
@@ -279,9 +279,7 @@ Datum json_object_get_timestamp(PG_FUNCTION_ARGS)
 		{
 			if (sel->type == cJSON_String)
 			{
-				/* TODO should free cstring_to_text's?
-						format: yyyy-MM-dd HH:mm:ss
-				*/
+				/* format: yyyy-MM-dd HH:mm:ss */
 				timestampWithTz = OidFunctionCall2(F_TO_TIMESTAMP,
 						PointerGetDatum(cstring_to_text(sel->valuestring)),
 						PointerGetDatum(cstring_to_text("YYYY-MM-DD HH:MI:SS")));
@@ -562,8 +560,9 @@ Datum json_array_to_numeric_array(PG_FUNCTION_ARGS)
 
 			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
 			{
-				items[ind] = DirectFunctionCall1(float4_numeric,
-						Float4GetDatum(elem->valuedouble));
+				items[ind] = OidFunctionCall2(F_NUMERIC_TO_NUMBER,
+						PointerGetDatum(cstring_to_text(elem->valuestring)),
+						PointerGetDatum(cstring_to_text(NUMERIC_FMT)));
 			}
 			array = construct_typed_array(items, count, NUMERICOID);
 
