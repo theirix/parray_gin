@@ -1,6 +1,13 @@
 /*-------------------------------------------------------------------------
  *
- * Here goes a licence
+ * postgre-json-functions.c
+ *    several functions for key-based JSON access
+ *
+ * Copyright (c) 2012, Con Certeza
+ * Author: irix <theirix@concerteza.ru>
+ *
+ * Extension is based on a slightly modified GSON parser
+ * (https://sites.google.com/site/gson/)
  *
  *-------------------------------------------------------------------------
  */
@@ -12,6 +19,7 @@
 #include "utils/fmgroids.h"
 #include "utils/builtins.h"
 #include "utils/numeric.h"
+#include "utils/int8.h"
 #include "utils/timestamp.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
@@ -21,6 +29,7 @@ PG_MODULE_MAGIC;
 
 ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype);
 
+/* TODO a little hackish */
 #define NUMERIC_FMT "99999999999999999999999999999999999999.99999999999999999999999999999999999999"
 
 Datum json_object_get_text(PG_FUNCTION_ARGS);
@@ -174,13 +183,12 @@ Datum json_object_get_int(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(result);
 }
 
-/* TODO should read 64-bit value, cJSON doesn't support it */
 Datum json_object_get_bigint(PG_FUNCTION_ARGS)
 {
 	text *argJson = PG_GETARG_TEXT_P(0);
 	text *argKey = PG_GETARG_TEXT_P(1);
 	bool status = false;
-	int64 result;
+	Datum result;
 	char *strJson, *strKey;
 	cJSON *root, *sel;
 
@@ -195,7 +203,8 @@ Datum json_object_get_bigint(PG_FUNCTION_ARGS)
 		{
 			if (sel->type == cJSON_Number)
 			{
-				result = sel->valueint;
+				result = DirectFunctionCall1(int8in,
+						CStringGetDatum(sel->valuestring));
 				status = true;
 			}
 		}
@@ -210,14 +219,9 @@ Datum json_object_get_bigint(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("json string is not an integer")));
 
-	PG_RETURN_INT64(result);
+	PG_RETURN_DATUM(result);
 }
 
-/* TODO should deal with large ints
- * json large int is specified without quotes and so interpeted by cJSON
- * as a double not as a string
- * Needs a manual parsing and then translating to a numeric from a string 
- */
 Datum json_object_get_numeric(PG_FUNCTION_ARGS)
 {
 	text *argJson = PG_GETARG_TEXT_P(0);
@@ -508,7 +512,8 @@ Datum json_array_to_bigint_array(PG_FUNCTION_ARGS)
 
 			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
 			{
-				items[ind] = Int64GetDatum(elem->valueint);
+				items[ind] = DirectFunctionCall1(int8in,
+						CStringGetDatum(elem->valuestring));
 			}
 			array = construct_typed_array(items, count, INT8OID);
 

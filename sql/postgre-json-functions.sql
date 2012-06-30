@@ -10,6 +10,8 @@ select json_object_get_boolean('{"foo":"qq", "bar": true}', 'bar');
 select json_object_get_int('{"baz": 42, "boo": 42.424242}', 'baz');
 -- 42
 select json_object_get_bigint('{"baz": 42, "boo": 42.424242}', 'baz');
+-- 9223372036854
+select json_object_get_bigint('{"baz": 9223372036854, "boo": 42.424242}', 'baz');
 -- 42.424242
 select json_object_get_numeric('{"baz": 42, "boo": 42.424242}', 'boo');
 
@@ -30,8 +32,8 @@ select json_array_to_text_array('["foo", "bar"]');
 select json_array_to_boolean_array('[true, false]');
 -- {42,43}
 select json_array_to_int_array('[42, 43]');
--- {42,43}
-select json_array_to_bigint_array('[42, 43]');
+-- {42,9223372036854}
+select json_array_to_bigint_array('[42, 9223372036854]');
 -- {42.4242,43.4343}
 select json_array_to_numeric_array('[42.4242,43.4343]');
 -- {"Tue Dec 01 01:23:45 2009"}
