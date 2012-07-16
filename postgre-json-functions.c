@@ -23,15 +23,39 @@
 #include "utils/timestamp.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
+
+/*
+ * Note. cJSON should be patched for this extension.
+ * Of course we should contribute a patch to upstream
+ */
 #include "cJSON.h"
 
 PG_MODULE_MAGIC;
 
-ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype);
-
-/* TODO a little hackish */
+/* TODO a little hackish format string */
 #define NUMERIC_FMT "99999999999999999999999999999999999999.99999999999999999999999999999999999999"
 
+/*
+ * Internal functions declarations
+ */
+typedef bool (*pextract_type_from_json)(cJSON *elem, DatumPtr result);
+
+Datum json_object_get_generic(PG_FUNCTION_ARGS, int json_type, pextract_type_from_json extract_type_from_json);
+Datum json_array_to_array_generic(PG_FUNCTION_ARGS, int json_type, Oid elem_oid, pextract_type_from_json extract_type_from_json);
+
+bool match_json_types (int type1, int type2);
+ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype);
+
+bool extract_json_string(cJSON *elem, DatumPtr result);
+bool extract_json_boolean(cJSON *elem, DatumPtr result);
+bool extract_json_int(cJSON *elem, DatumPtr result);
+bool extract_json_bigint(cJSON *elem, DatumPtr result);
+bool extract_json_numeric(cJSON *elem, DatumPtr result);
+bool extract_json_timestamp(cJSON *elem, DatumPtr result);
+
+/*
+ * Exported functions
+ */
 Datum json_object_get_text(PG_FUNCTION_ARGS);
 Datum json_object_get_boolean(PG_FUNCTION_ARGS);
 Datum json_object_get_int(PG_FUNCTION_ARGS);
@@ -59,269 +83,91 @@ PG_FUNCTION_INFO_V1(json_array_to_numeric_array);
 PG_FUNCTION_INFO_V1(json_array_to_timestamp_array);
 
 
-
 /**
- * Base functions *
+ *
+ * Internal functions
+ *
  */
 
-Datum json_object_get_text(PG_FUNCTION_ARGS)
-{
-	text *argJson = PG_GETARG_TEXT_P(0);
-	text *argKey = PG_GETARG_TEXT_P(1);
-	bool status = false;
-	text *result;
-	char *strJson, *strKey;
-	cJSON *root, *sel;
-
-	strJson = text_to_cstring(argJson);
-	strKey = text_to_cstring(argKey);
-	
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		sel = cJSON_GetObjectItem(root, strKey);
-		if (sel)
-		{
-			if (sel->type == cJSON_String)
-			{
-				result = cstring_to_text(sel->valuestring);
-				status = true;
-			}
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-	pfree(strKey);
-			
-	if (!status)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not a string")));
-
-	PG_RETURN_TEXT_P(result);
-}
-
-Datum json_object_get_boolean(PG_FUNCTION_ARGS)
-{
-	text *argJson = PG_GETARG_TEXT_P(0);
-	text *argKey = PG_GETARG_TEXT_P(1);
-	bool status = false;
-	int result;
-	char *strJson, *strKey;
-	cJSON *root, *sel;
-
-	strJson = text_to_cstring(argJson);
-	strKey = text_to_cstring(argKey);
-	
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		sel = cJSON_GetObjectItem(root, strKey);
-		if (sel)
-		{
-			if (sel->type == cJSON_True)
-			{
-				result = 1;
-				status = true;
-			}
-			else if (sel->type == cJSON_False)
-			{
-				result = 0;
-				status = true;
-			}
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-	pfree(strKey);
-			
-	if (!status)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not a bool")));
-
-	PG_RETURN_BOOL(result);
-}
-
-Datum json_object_get_int(PG_FUNCTION_ARGS)
-{
-	text *argJson = PG_GETARG_TEXT_P(0);
-	text *argKey = PG_GETARG_TEXT_P(1);
-	bool status = false;
-	int result;
-	char *strJson, *strKey;
-	cJSON *root, *sel;
-
-	strJson = text_to_cstring(argJson);
-	strKey = text_to_cstring(argKey);
-	
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		sel = cJSON_GetObjectItem(root, strKey);
-		if (sel)
-		{
-			if (sel->type == cJSON_Number)
-			{
-				result = sel->valueint;
-				status = true;
-			}
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-	pfree(strKey);
-			
-	if (!status)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an integer")));
-
-	PG_RETURN_INT32(result);
-}
-
-Datum json_object_get_bigint(PG_FUNCTION_ARGS)
-{
-	text *argJson = PG_GETARG_TEXT_P(0);
-	text *argKey = PG_GETARG_TEXT_P(1);
-	bool status = false;
-	Datum result;
-	char *strJson, *strKey;
-	cJSON *root, *sel;
-
-	strJson = text_to_cstring(argJson);
-	strKey = text_to_cstring(argKey);
-	
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		sel = cJSON_GetObjectItem(root, strKey);
-		if (sel)
-		{
-			if (sel->type == cJSON_Number)
-			{
-				result = DirectFunctionCall1(int8in,
-						CStringGetDatum(sel->valuestring));
-				status = true;
-			}
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-	pfree(strKey);
-			
-	if (!status)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an integer")));
-
-	PG_RETURN_DATUM(result);
-}
-
-Datum json_object_get_numeric(PG_FUNCTION_ARGS)
-{
-	text *argJson = PG_GETARG_TEXT_P(0);
-	text *argKey = PG_GETARG_TEXT_P(1);
-	bool status = false;
-	Datum result;
-	char *strJson, *strKey;
-	cJSON *root, *sel;
-
-	strJson = text_to_cstring(argJson);
-	strKey = text_to_cstring(argKey);
-	
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		sel = cJSON_GetObjectItem(root, strKey);
-		if (sel)
-		{
-			if (sel->type == cJSON_Number)
-			{
-				result = OidFunctionCall2(F_NUMERIC_TO_NUMBER,
-						PointerGetDatum(cstring_to_text(sel->valuestring)),
-						PointerGetDatum(cstring_to_text(NUMERIC_FMT)));
-				status = true;
-			}
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-	pfree(strKey);
-			
-	if (!status)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an integer")));
-
-	PG_RETURN_DATUM(result);
-}
-
-Datum json_object_get_timestamp(PG_FUNCTION_ARGS)
-{
-	text *argJson = PG_GETARG_TEXT_P(0);
-	text *argKey = PG_GETARG_TEXT_P(1);
-	bool status = false;
-	Datum result;
-	char *strJson, *strKey;
-	cJSON *root, *sel;
-	Datum timestampWithTz;
-
-	strJson = text_to_cstring(argJson);
-	strKey = text_to_cstring(argKey);
-	
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		sel = cJSON_GetObjectItem(root, strKey);
-		if (sel)
-		{
-			if (sel->type == cJSON_String)
-			{
-				/* format: yyyy-MM-dd HH:mm:ss */
-				timestampWithTz = OidFunctionCall2(F_TO_TIMESTAMP,
-						PointerGetDatum(cstring_to_text(sel->valuestring)),
-						PointerGetDatum(cstring_to_text("YYYY-MM-DD HH:MI:SS")));
-				Assert(timestampWithTz);
-				result = DirectFunctionCall1(timestamptz_timestamp,
-						timestampWithTz);
-				status = true;
-			}
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-	pfree(strKey);
-			
-	if (!status)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not a timestamp")));
-
-	PG_RETURN_DATUM(result);
-}
-
-/**
- * Array functions *
+/*
+ * Check json type equivalence
+ * Should handle true/false as a single boolean type
  */
+bool match_json_types (int type1, int type2)
+{
+	return (type1 == cJSON_True || type1 == cJSON_False)
+		? (type2 == cJSON_True || type2 == cJSON_False)
+		: type1 == type2;
+}
 
-
+/*
+ * Shortcut array construction call
+ */
 ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype)
 {
 	int16   elmlen;
 	bool    elmbyval;
-	char    elmalign;	
+	char    elmalign;
 	get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
 	return construct_array(elems, nelems, elmtype, elmlen, elmbyval, elmalign);
 }
 
-Datum json_array_to_text_array(PG_FUNCTION_ARGS)
+/*
+ * Generic json scalar value converter
+ * Returns a datum with pg value (value or reference, depends on type)
+ * Args:
+ * - standard PG_FUNCTION_ARGS
+ * - json_type a json type to check element for. error occured if element is not passed a check.
+ * - extract_type_from_json actual json data extractor
+ */
+Datum json_object_get_generic(PG_FUNCTION_ARGS, int json_type, pextract_type_from_json extract_type_from_json)
+{
+	text *argJson = PG_GETARG_TEXT_P(0);
+	text *argKey = PG_GETARG_TEXT_P(1);
+	bool status = false;
+	Datum result;
+	char *strJson, *strKey;
+	cJSON *root, *sel;
+
+	strJson = text_to_cstring(argJson);
+	strKey = text_to_cstring(argKey);
+
+	root = cJSON_Parse(strJson);
+	if (root)
+	{
+		sel = cJSON_GetObjectItem(root, strKey);
+		if (sel)
+		{
+			if (match_json_types(json_type, sel->type))
+			{
+				if (extract_type_from_json(sel, &result))
+					status = true;
+			}
+		}
+		cJSON_Delete(root);
+	}
+
+	pfree(strJson);
+	pfree(strKey);
+
+	if (!status)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("json string is of a wrong type")));
+
+	PG_RETURN_DATUM(result);
+}
+
+/*
+ * Generic json array converter
+ * Returns an array datum
+ * Args:
+ * - standard PG_FUNCTION_ARGS
+ * - json_type a json type to check element for. error occured if element is not passed a check.
+ * - elem_oid a pg element type
+ * - extract_type_from_json actual json data extractor
+ */
+Datum json_array_to_array_generic(PG_FUNCTION_ARGS, int json_type, Oid elem_oid, pextract_type_from_json extract_type_from_json)
 {
 	text *argJson = PG_GETARG_TEXT_P(0);
 	Datum *items = NULL;
@@ -341,10 +187,10 @@ Datum json_array_to_text_array(PG_FUNCTION_ARGS)
 				ereport(ERROR,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 						 errmsg("no childs allowed")));
-			if (elem->type != cJSON_String)
+			if (!match_json_types(json_type, elem->type))
 				ereport(ERROR,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("expected boolean value at %d position", ind)));
+						 errmsg("expected XXX int value at %d position", ind)));
 			++count;
 		}
 
@@ -354,294 +200,158 @@ Datum json_array_to_text_array(PG_FUNCTION_ARGS)
 
 			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
 			{
-				items[ind] = CStringGetTextDatum(elem->valuestring);
+				if (!extract_type_from_json(elem, &items[ind]))
+					ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("error converting json type XXX at %d position", ind)));
 			}
-			array = construct_typed_array(items, count, TEXTOID);
+			array = construct_typed_array(items, count, elem_oid);
 
-			for (ind = 0; ind < count; ++ind)
-				pfree(DatumGetPointer(items[ind]));
 			pfree(items);
 		}
 		cJSON_Delete(root);
 	}
 
 	pfree(strJson);
-			
+
 	if (!array)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an array with texts")));
+				 errmsg("json string is not an array with XXX")));
 
 	PG_RETURN_ARRAYTYPE_P(array);
+}
+
+/*
+ * Concrete json data extractors
+ */
+
+bool extract_json_string(cJSON *elem, DatumPtr result)
+{
+	*result = PointerGetDatum(cstring_to_text(elem->valuestring));
+	return true;
+}
+
+bool extract_json_boolean(cJSON *elem, DatumPtr result)
+{
+	if (elem->type == cJSON_True)
+	{
+		*result = BoolGetDatum(1);
+		return true;
+	}
+	else if (elem->type == cJSON_False)
+	{
+		*result = BoolGetDatum(0);
+		return true;
+	}
+	return false;
+}
+
+bool extract_json_int(cJSON *elem, DatumPtr result)
+{
+	*result = Int32GetDatum(elem->valueint);
+	return true;
+}
+
+bool extract_json_bigint(cJSON *elem, DatumPtr result)
+{
+	*result = DirectFunctionCall1(int8in, CStringGetDatum(elem->valuestring));
+	return true;
+}
+
+bool extract_json_numeric(cJSON *elem, DatumPtr result)
+{
+	*result = OidFunctionCall2(F_NUMERIC_TO_NUMBER,
+			PointerGetDatum(cstring_to_text(elem->valuestring)),
+			PointerGetDatum(cstring_to_text(NUMERIC_FMT)));
+	return true;
+}
+
+bool extract_json_timestamp(cJSON *elem, DatumPtr result)
+{
+	Datum timestampWithTz;
+	/* format: yyyy-MM-dd HH:mm:ss */
+	timestampWithTz = OidFunctionCall2(F_TO_TIMESTAMP,
+			PointerGetDatum(cstring_to_text(elem->valuestring)),
+			PointerGetDatum(cstring_to_text("YYYY-MM-DD HH:MI:SS")));
+	Assert(timestampWithTz);
+	*result = DirectFunctionCall1(timestamptz_timestamp,
+			timestampWithTz);
+	return true;
+}
+
+/**
+ *
+ * Exported functions
+ *
+ */
+
+
+/*
+ * Scalar functions
+ */
+Datum json_object_get_text(PG_FUNCTION_ARGS)
+{
+	return json_object_get_generic(fcinfo, cJSON_String, extract_json_string);
+}
+
+Datum json_object_get_boolean(PG_FUNCTION_ARGS)
+{
+	return json_object_get_generic(fcinfo, cJSON_True, extract_json_boolean);
+}
+
+Datum json_object_get_int(PG_FUNCTION_ARGS)
+{
+	return json_object_get_generic(fcinfo, cJSON_Number, extract_json_int);
+}
+
+Datum json_object_get_bigint(PG_FUNCTION_ARGS)
+{
+	return json_object_get_generic(fcinfo, cJSON_Number, extract_json_bigint);
+}
+
+Datum json_object_get_numeric(PG_FUNCTION_ARGS)
+{
+	return json_object_get_generic(fcinfo, cJSON_Number, extract_json_numeric);
+}
+
+Datum json_object_get_timestamp(PG_FUNCTION_ARGS)
+{
+	return json_object_get_generic(fcinfo, cJSON_String, extract_json_timestamp);
+}
+
+/*
+ * Array functions
+ */
+Datum json_array_to_text_array(PG_FUNCTION_ARGS)
+{
+	return json_array_to_array_generic(fcinfo, cJSON_String, TEXTOID, extract_json_string);
 }
 
 Datum json_array_to_boolean_array(PG_FUNCTION_ARGS)
 {
-	text *argJson = PG_GETARG_TEXT_P(0);
-	Datum *items = NULL;
-	ArrayType *array = NULL;
-	char *strJson;
-	cJSON *root, *elem;
-	int count = 0, ind;
-
-	strJson = text_to_cstring(argJson);
-
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		for (elem = root->child; elem; elem = elem->next)
-		{
-			if (elem->child)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("no childs allowed")));
-			if (elem->type != cJSON_True && elem->type != cJSON_False)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("expected boolean value at %d position", ind)));
-			++count;
-		}
-
-		if (count)
-		{
-			items = (Datum*)palloc(count * sizeof(Datum));
-
-			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
-			{
-				items[ind] = BoolGetDatum(elem->type == cJSON_True);
-			}
-			array = construct_typed_array(items, count, BOOLOID);
-
-			pfree(items);
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-			
-	if (!array)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an array with texts")));
-
-	PG_RETURN_ARRAYTYPE_P(array);
+	return json_array_to_array_generic(fcinfo, cJSON_True, BOOLOID, extract_json_boolean);
 }
 
 Datum json_array_to_int_array(PG_FUNCTION_ARGS)
 {
-	text *argJson = PG_GETARG_TEXT_P(0);
-	Datum *items = NULL;
-	ArrayType *array = NULL;
-	char *strJson;
-	cJSON *root, *elem;
-	int count = 0, ind;
-
-	strJson = text_to_cstring(argJson);
-
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		for (elem = root->child; elem; elem = elem->next)
-		{
-			if (elem->child)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("no childs allowed")));
-			if (elem->type != cJSON_Number)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("expected int value at %d position", ind)));
-			++count;
-		}
-
-		if (count)
-		{
-			items = (Datum*)palloc(count * sizeof(Datum));
-
-			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
-			{
-				items[ind] = Int32GetDatum(elem->valueint);
-			}
-			array = construct_typed_array(items, count, INT4OID);
-
-			pfree(items);
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-			
-	if (!array)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an array with texts")));
-
-	PG_RETURN_ARRAYTYPE_P(array);
+	return json_array_to_array_generic(fcinfo, cJSON_Number, INT4OID, extract_json_int);
 }
 
 Datum json_array_to_bigint_array(PG_FUNCTION_ARGS)
 {
-	text *argJson = PG_GETARG_TEXT_P(0);
-	Datum *items = NULL;
-	ArrayType *array = NULL;
-	char *strJson;
-	cJSON *root, *elem;
-	int count = 0, ind;
-
-	strJson = text_to_cstring(argJson);
-
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		for (elem = root->child; elem; elem = elem->next)
-		{
-			if (elem->child)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("no childs allowed")));
-			if (elem->type != cJSON_Number)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("expected int value at %d position", ind)));
-			++count;
-		}
-
-		if (count)
-		{
-			items = (Datum*)palloc(count * sizeof(Datum));
-
-			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
-			{
-				items[ind] = DirectFunctionCall1(int8in,
-						CStringGetDatum(elem->valuestring));
-			}
-			array = construct_typed_array(items, count, INT8OID);
-
-			pfree(items);
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-			
-	if (!array)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an array with texts")));
-
-	PG_RETURN_ARRAYTYPE_P(array);
+	return json_array_to_array_generic(fcinfo, cJSON_Number, INT8OID, extract_json_bigint);
 }
 
 Datum json_array_to_numeric_array(PG_FUNCTION_ARGS)
 {
-	text *argJson = PG_GETARG_TEXT_P(0);
-	Datum *items = NULL;
-	ArrayType *array = NULL;
-	char *strJson;
-	cJSON *root, *elem;
-	int count = 0, ind;
-
-	strJson = text_to_cstring(argJson);
-
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		for (elem = root->child; elem; elem = elem->next)
-		{
-			if (elem->child)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("no childs allowed")));
-			if (elem->type != cJSON_Number)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("expected int value at %d position", ind)));
-			++count;
-		}
-
-		if (count)
-		{
-			items = (Datum*)palloc(count * sizeof(Datum));
-
-			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
-			{
-				items[ind] = OidFunctionCall2(F_NUMERIC_TO_NUMBER,
-						PointerGetDatum(cstring_to_text(elem->valuestring)),
-						PointerGetDatum(cstring_to_text(NUMERIC_FMT)));
-			}
-			array = construct_typed_array(items, count, NUMERICOID);
-
-			pfree(items);
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-			
-	if (!array)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an array with texts")));
-
-	PG_RETURN_ARRAYTYPE_P(array);
+	return json_array_to_array_generic(fcinfo, cJSON_Number, NUMERICOID, extract_json_numeric);
 }
 
 Datum json_array_to_timestamp_array(PG_FUNCTION_ARGS)
 {
-	text *argJson = PG_GETARG_TEXT_P(0);
-	Datum *items = NULL;
-	ArrayType *array = NULL;
-	char *strJson;
-	cJSON *root, *elem;
-	int count = 0, ind;
-	Datum timestampWithTz;
-
-	strJson = text_to_cstring(argJson);
-
-	root = cJSON_Parse(strJson);
-	if (root)
-	{
-		for (elem = root->child; elem; elem = elem->next)
-		{
-			if (elem->child)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("no childs allowed")));
-			if (elem->type != cJSON_String)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("expected int value at %d position", ind)));
-			++count;
-		}
-
-		if (count)
-		{
-			items = (Datum*)palloc(count * sizeof(Datum));
-
-			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
-			{
-				timestampWithTz = OidFunctionCall2(F_TO_TIMESTAMP,
-						PointerGetDatum(cstring_to_text(elem->valuestring)),
-						PointerGetDatum(cstring_to_text("YYYY-MM-DD HH:MI:SS")));
-				Assert(timestampWithTz);
-				items[ind] = DirectFunctionCall1(timestamptz_timestamp,
-						timestampWithTz);
-			}
-			array = construct_typed_array(items, count, TIMESTAMPOID);
-
-			pfree(items);
-		}
-		cJSON_Delete(root);
-	}
-
-	pfree(strJson);
-			
-	if (!array)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("json string is not an array with texts")));
-
-	PG_RETURN_ARRAYTYPE_P(array);
+	return json_array_to_array_generic(fcinfo, cJSON_String, TIMESTAMPOID, extract_json_timestamp);
 }
+
 
 
