@@ -13,7 +13,6 @@
  */
 
 #include "postgres.h"
-#include "fmgr.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "utils/fmgroids.h"
@@ -23,6 +22,7 @@
 #include "utils/timestamp.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
+#include "utils/formatting.h"
 
 /*
  * Note. cJSON should be patched for this extension.
@@ -229,7 +229,7 @@ Datum json_array_to_array_generic(PG_FUNCTION_ARGS, int json_type, Oid elem_oid,
 bool extract_json_string(cJSON *elem, DatumPtr result)
 {
 	*result = PointerGetDatum(cstring_to_text(elem->valuestring));
-	return true;
+	return false;
 }
 
 bool extract_json_boolean(cJSON *elem, DatumPtr result)
@@ -261,7 +261,7 @@ bool extract_json_bigint(cJSON *elem, DatumPtr result)
 
 bool extract_json_numeric(cJSON *elem, DatumPtr result)
 {
-	*result = OidFunctionCall2(F_NUMERIC_TO_NUMBER,
+	*result = DirectFunctionCall2(numeric_to_number,
 			PointerGetDatum(cstring_to_text(elem->valuestring)),
 			PointerGetDatum(cstring_to_text(NUMERIC_FMT)));
 	return true;
@@ -271,7 +271,7 @@ bool extract_json_timestamp(cJSON *elem, DatumPtr result)
 {
 	Datum timestampWithTz;
 	/* format: yyyy-MM-dd HH:mm:ss */
-	timestampWithTz = OidFunctionCall2(F_TO_TIMESTAMP,
+	timestampWithTz = DirectFunctionCall2(to_timestamp,
 			PointerGetDatum(cstring_to_text(elem->valuestring)),
 			PointerGetDatum(cstring_to_text("YYYY-MM-DD HH:MI:SS")));
 	Assert(timestampWithTz);
