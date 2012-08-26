@@ -39,5 +39,6 @@ select json_array_to_numeric_array('[42.4242,43.4343]');
 -- {"Tue Dec 01 01:23:45 2009"}
 select json_array_to_timestamp_array('["2009-12-01 01:23:45"]');
 
+
 \t off
 \pset format aligned

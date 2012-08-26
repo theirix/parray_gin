@@ -13,8 +13,11 @@
  */
 
 #include "postgres.h"
+#include "fmgr.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
+#include "access/skey.h"
 #include "utils/fmgroids.h"
 #include "utils/builtins.h"
 #include "utils/numeric.h"
@@ -32,6 +35,16 @@
 
 PG_MODULE_MAGIC;
 
+/* log level, usually DEBUG5 (silent) or NOTICE (messages are sent to client side) */
+#define PGJSON_TRACE_LEVEL NOTICE
+
+/* 
+ * Strategy */
+/* @> operator strategy */
+#define PGJSON_STRATEGY_CONTAINS 7
+/* <@ operator strategy */
+#define PGJSON_STRATEGY_CONTAINED_BY 8
+
 /* TODO a little hackish format string */
 #define NUMERIC_FMT "99999999999999999999999999999999999999.99999999999999999999999999999999999999"
 
@@ -40,8 +53,10 @@ PG_MODULE_MAGIC;
  */
 typedef bool (*pextract_type_from_json)(cJSON *elem, DatumPtr result);
 
-Datum json_object_get_generic(PG_FUNCTION_ARGS, int json_type, pextract_type_from_json extract_type_from_json);
-Datum json_array_to_array_generic(PG_FUNCTION_ARGS, int json_type, Oid elem_oid, pextract_type_from_json extract_type_from_json);
+Datum json_object_get_generic(text *argJson, text *argKey, int json_type, pextract_type_from_json extractor);
+Datum json_object_get_generic_args(PG_FUNCTION_ARGS, int json_type, pextract_type_from_json extractor);
+Datum json_array_to_array_generic(text *argJson, int json_type, Oid elem_oid, pextract_type_from_json extractor);
+Datum json_array_to_array_generic_args(PG_FUNCTION_ARGS, int json_type, Oid elem_oid, pextract_type_from_json extractor);
 
 bool match_json_types (int type1, int type2);
 ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype);
@@ -69,6 +84,12 @@ Datum json_array_to_bigint_array(PG_FUNCTION_ARGS);
 Datum json_array_to_numeric_array(PG_FUNCTION_ARGS);
 Datum json_array_to_timestamp_array(PG_FUNCTION_ARGS);
 
+Datum json_gin_compare(PG_FUNCTION_ARGS);
+Datum json_gin_extract_value(PG_FUNCTION_ARGS);
+Datum json_gin_extract_query(PG_FUNCTION_ARGS);
+Datum json_gin_consistent(PG_FUNCTION_ARGS);
+Datum json_gin_compare_partial(PG_FUNCTION_ARGS);
+
 PG_FUNCTION_INFO_V1(json_object_get_text);
 PG_FUNCTION_INFO_V1(json_object_get_boolean);
 PG_FUNCTION_INFO_V1(json_object_get_int);
@@ -82,6 +103,11 @@ PG_FUNCTION_INFO_V1(json_array_to_bigint_array);
 PG_FUNCTION_INFO_V1(json_array_to_numeric_array);
 PG_FUNCTION_INFO_V1(json_array_to_timestamp_array);
 
+PG_FUNCTION_INFO_V1(json_gin_compare);
+PG_FUNCTION_INFO_V1(json_gin_extract_value);
+PG_FUNCTION_INFO_V1(json_gin_extract_query);
+PG_FUNCTION_INFO_V1(json_gin_consistent);
+PG_FUNCTION_INFO_V1(json_gin_compare_partial);
 
 /**
  *
@@ -116,14 +142,13 @@ ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype)
  * Generic json scalar value converter
  * Returns a datum with pg value (value or reference, depends on type)
  * Args:
- * - standard PG_FUNCTION_ARGS
+ * - argJson is a json string
+ * - argKey is a string key
  * - json_type a json type to check element for. error occured if element is not passed a check.
- * - extract_type_from_json actual json data extractor
+ * - extractor actual json data extractor
  */
-Datum json_object_get_generic(PG_FUNCTION_ARGS, int json_type, pextract_type_from_json extract_type_from_json)
+Datum json_object_get_generic(text *argJson, text *argKey, int json_type, pextract_type_from_json extractor)
 {
-	text *argJson = PG_GETARG_TEXT_P(0);
-	text *argKey = PG_GETARG_TEXT_P(1);
 	bool status = false;
 	Datum result;
 	char *strJson, *strKey;
@@ -140,7 +165,7 @@ Datum json_object_get_generic(PG_FUNCTION_ARGS, int json_type, pextract_type_fro
 		{
 			if (match_json_types(json_type, sel->type))
 			{
-				if (extract_type_from_json(sel, &result))
+				if (extractor(sel, &result))
 					status = true;
 			}
 		}
@@ -159,17 +184,24 @@ Datum json_object_get_generic(PG_FUNCTION_ARGS, int json_type, pextract_type_fro
 }
 
 /*
+ * Generic json scalar value converter (PG_FUNCTION_ARGS version)
+ */
+Datum json_object_get_generic_args(PG_FUNCTION_ARGS, int json_type, pextract_type_from_json extractor)
+{
+	return json_object_get_generic(PG_GETARG_TEXT_P(0), PG_GETARG_TEXT_P(1), json_type, extractor);
+}
+
+/*
  * Generic json array converter
  * Returns an array datum
  * Args:
- * - standard PG_FUNCTION_ARGS
+ * - argJson is a json string
  * - json_type a json type to check element for. error occured if element is not passed a check.
  * - elem_oid a pg element type
- * - extract_type_from_json actual json data extractor
+ * - extractor actual json data extractor
  */
-Datum json_array_to_array_generic(PG_FUNCTION_ARGS, int json_type, Oid elem_oid, pextract_type_from_json extract_type_from_json)
+Datum json_array_to_array_generic(text *argJson, int json_type, Oid elem_oid, pextract_type_from_json extractor)
 {
-	text *argJson = PG_GETARG_TEXT_P(0);
 	Datum *items = NULL;
 	ArrayType *array = NULL;
 	char *strJson;
@@ -200,7 +232,7 @@ Datum json_array_to_array_generic(PG_FUNCTION_ARGS, int json_type, Oid elem_oid,
 
 			for (elem = root->child, ind = 0; elem; elem = elem->next, ++ind)
 			{
-				if (!extract_type_from_json(elem, &items[ind]))
+				if (!extractor(elem, &items[ind]))
 					ereport(ERROR,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 						 errmsg("error converting json type XXX at %d position", ind)));
@@ -220,6 +252,14 @@ Datum json_array_to_array_generic(PG_FUNCTION_ARGS, int json_type, Oid elem_oid,
 				 errmsg("json string is not an array with XXX")));
 
 	PG_RETURN_ARRAYTYPE_P(array);
+}
+
+/*
+ * Generic json array converter (PG_FUNCTION_ARGS version)
+ */
+Datum json_array_to_array_generic_args(PG_FUNCTION_ARGS, int json_type, Oid elem_oid, pextract_type_from_json extractor)
+{
+	return json_array_to_array_generic(PG_GETARG_TEXT_P(0), json_type, elem_oid, extractor);
 }
 
 /*
@@ -292,32 +332,32 @@ bool extract_json_timestamp(cJSON *elem, DatumPtr result)
  */
 Datum json_object_get_text(PG_FUNCTION_ARGS)
 {
-	return json_object_get_generic(fcinfo, cJSON_String, extract_json_string);
+	return json_object_get_generic_args(fcinfo, cJSON_String, extract_json_string);
 }
 
 Datum json_object_get_boolean(PG_FUNCTION_ARGS)
 {
-	return json_object_get_generic(fcinfo, cJSON_True, extract_json_boolean);
+	return json_object_get_generic_args(fcinfo, cJSON_True, extract_json_boolean);
 }
 
 Datum json_object_get_int(PG_FUNCTION_ARGS)
 {
-	return json_object_get_generic(fcinfo, cJSON_Number, extract_json_int);
+	return json_object_get_generic_args(fcinfo, cJSON_Number, extract_json_int);
 }
 
 Datum json_object_get_bigint(PG_FUNCTION_ARGS)
 {
-	return json_object_get_generic(fcinfo, cJSON_Number, extract_json_bigint);
+	return json_object_get_generic_args(fcinfo, cJSON_Number, extract_json_bigint);
 }
 
 Datum json_object_get_numeric(PG_FUNCTION_ARGS)
 {
-	return json_object_get_generic(fcinfo, cJSON_Number, extract_json_numeric);
+	return json_object_get_generic_args(fcinfo, cJSON_Number, extract_json_numeric);
 }
 
 Datum json_object_get_timestamp(PG_FUNCTION_ARGS)
 {
-	return json_object_get_generic(fcinfo, cJSON_String, extract_json_timestamp);
+	return json_object_get_generic_args(fcinfo, cJSON_String, extract_json_timestamp);
 }
 
 /*
@@ -325,33 +365,168 @@ Datum json_object_get_timestamp(PG_FUNCTION_ARGS)
  */
 Datum json_array_to_text_array(PG_FUNCTION_ARGS)
 {
-	return json_array_to_array_generic(fcinfo, cJSON_String, TEXTOID, extract_json_string);
+	return json_array_to_array_generic_args(fcinfo, cJSON_String, TEXTOID, extract_json_string);
 }
 
 Datum json_array_to_boolean_array(PG_FUNCTION_ARGS)
 {
-	return json_array_to_array_generic(fcinfo, cJSON_True, BOOLOID, extract_json_boolean);
+	return json_array_to_array_generic_args(fcinfo, cJSON_True, BOOLOID, extract_json_boolean);
 }
 
 Datum json_array_to_int_array(PG_FUNCTION_ARGS)
 {
-	return json_array_to_array_generic(fcinfo, cJSON_Number, INT4OID, extract_json_int);
+	return json_array_to_array_generic_args(fcinfo, cJSON_Number, INT4OID, extract_json_int);
 }
 
 Datum json_array_to_bigint_array(PG_FUNCTION_ARGS)
 {
-	return json_array_to_array_generic(fcinfo, cJSON_Number, INT8OID, extract_json_bigint);
+	return json_array_to_array_generic_args(fcinfo, cJSON_Number, INT8OID, extract_json_bigint);
 }
 
 Datum json_array_to_numeric_array(PG_FUNCTION_ARGS)
 {
-	return json_array_to_array_generic(fcinfo, cJSON_Number, NUMERICOID, extract_json_numeric);
+	return json_array_to_array_generic_args(fcinfo, cJSON_Number, NUMERICOID, extract_json_numeric);
 }
 
 Datum json_array_to_timestamp_array(PG_FUNCTION_ARGS)
 {
-	return json_array_to_array_generic(fcinfo, cJSON_String, TIMESTAMPOID, extract_json_timestamp);
+	return json_array_to_array_generic_args(fcinfo, cJSON_String, TIMESTAMPOID, extract_json_timestamp);
 }
 
+/**
+ *
+ * GIN support
+ *
+ */
 
+Datum
+json_gin_compare(PG_FUNCTION_ARGS)
+{
+	text *key1 = PG_GETARG_TEXT_P(0);
+	text *key2 = PG_GETARG_TEXT_P(1);
 
+	char *pstr1, *pstr2;
+	int32 result;
+
+	result = DatumGetInt32(DirectFunctionCall2(bttextcmp, PointerGetDatum(key1), PointerGetDatum(key2)));
+
+	/* always log */
+	pstr1 = text_to_cstring(key1);
+	pstr2 = text_to_cstring(key2);
+	elog(PGJSON_TRACE_LEVEL, "GIN compare: key=%s vs key=%s -> %d", pstr1, pstr2, result);
+	pfree(pstr1);
+	pfree(pstr2);
+
+	PG_RETURN_INT32(result);
+}
+
+/* (Datum itemValue, int32 *nkeys, bool **nullFlags) */
+Datum
+json_gin_extract_value(PG_FUNCTION_ARGS)
+{
+	text *itemValue = PG_GETARG_TEXT_P(0);
+	int32 *nkeys = (int32*)PG_GETARG_POINTER(1);
+
+	char *pstr;
+	ArrayType *keys;
+
+	keys = DatumGetArrayTypeP(json_array_to_array_generic(itemValue, cJSON_String, TEXTOID, extract_json_string));
+	if (keys)
+		*nkeys = ARR_DIMS(keys)[0];
+	else
+		*nkeys = 0;
+	
+	/* always log */
+	pstr = text_to_cstring(itemValue);
+	elog(PGJSON_TRACE_LEVEL, "GIN extract_value: json=%s -> %d items", pstr, *nkeys);
+	pfree(pstr);
+
+	PG_RETURN_POINTER(keys);
+}
+
+/* (Datum query, int32 *nkeys, StrategyNumber n, bool **pmatch, Pointer **extra_data, bool **nullFlags, int32 *searchMode) */
+Datum
+json_gin_extract_query(PG_FUNCTION_ARGS)
+{
+	Datum query = PG_GETARG_DATUM(0);
+	int32 *nkeys = (int32*)PG_GETARG_POINTER(1);
+	StrategyNumber strategy = PG_GETARG_UINT16(2);
+	bool **nullFlags = (bool**)PG_GETARG_POINTER(5);
+	
+	ArrayType *queryArray;
+	Datum *keys;
+
+	int16 elmlen;
+	bool elmbyval;
+	char elmalign;
+	int nelems;
+
+	if (strategy == PGJSON_STRATEGY_CONTAINS)
+	{
+		queryArray = DatumGetArrayTypePCopy(query);
+		/* query is an array of texts, parse it and return */
+		get_typlenbyvalalign(ARR_ELEMTYPE(queryArray),
+				&elmlen, &elmbyval, &elmalign);
+
+		deconstruct_array(queryArray, ARR_ELEMTYPE(queryArray),
+				elmlen, elmbyval, elmalign,
+				&keys, nullFlags, &nelems);
+
+		*nkeys = nelems;
+	}
+	else 
+	{
+		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
+	}
+
+	/* always log */
+	elog(PGJSON_TRACE_LEVEL, "GIN extract_query: json= strategy=%d -> %d items", 
+			strategy, *nkeys);
+	
+	PG_RETURN_POINTER(keys);
+}
+
+/* bool check[], StrategyNumber n, Datum query, int32 nkeys,
+		Pointer extra_data[], bool *recheck, Datum queryKeys[], bool nullFlags[]*/
+Datum
+json_gin_consistent(PG_FUNCTION_ARGS)
+{
+	bool *check = (bool*)PG_GETARG_POINTER(0);
+	StrategyNumber strategy = PG_GETARG_UINT16(1);
+	/*Datum query = PG_GETARG_DATUM(2);*/
+	int32 nkeys = PG_GETARG_INT32(3);
+	bool *recheck = (bool*)PG_GETARG_POINTER(5);
+
+	bool result = false;
+	int i;
+
+	if (strategy == PGJSON_STRATEGY_CONTAINS)
+	{
+		*recheck = true;
+		result = true;
+		for (i = 0; i < nkeys; ++i)
+		{
+			if (!check[i])
+				result = false;
+		}
+	}
+	else 
+	{
+		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
+	}
+	
+	/* always log */
+	elog(PGJSON_TRACE_LEVEL, "GIN consistent: %d keys, strategy=%d -> %s", 
+			nkeys, strategy, result?"true":"false");
+
+	PG_RETURN_BOOL(result);
+}
+
+Datum
+json_gin_compare_partial(PG_FUNCTION_ARGS)
+{
+	/* not used */
+	PG_RETURN_NULL();
+}
+
+/* vim: set noexpandtab tabstop=4 shiftwidth=4: */

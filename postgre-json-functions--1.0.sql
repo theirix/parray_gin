@@ -1,4 +1,4 @@
-/* contrib/postgre-json-functions/postgre-json-functions--1.0.sql */
+/* postgre-json-functions--1.0.sql */
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION postgre-json-functions" to load this file. \quit
@@ -41,3 +41,15 @@ create or replace function json_array_to_numeric_array(text) returns numeric[]
 create or replace function json_array_to_timestamp_array(text) returns timestamp without time zone[]
  as 'MODULE_PATHNAME', 'json_array_to_timestamp_array' language C immutable strict; 
 
+-- GIN support
+
+create operator class json_gin_ops
+for type _text using gin
+as
+	operator	7			@>, -- text, text[]
+	function	1			json_gin_compare,
+	function	2			json_gin_extract_value,
+	function	3			json_gin_extract_query,
+	function	4			json_gin_consistent,
+	--function	5			json_gin_compare_partial,
+	storage		text;
