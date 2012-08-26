@@ -114,7 +114,7 @@ static const char *parse_number(cJSON *item,const char *num)
 	item->valueint=(int)n;
 	item->valuestring=(char*)cJSON_malloc(num-numstart+1);
 	memcpy(item->valuestring,numstart,num-numstart);
-	item->valuestring[num-numstart+1] = 0;
+	item->valuestring[num-numstart] = 0;
 	item->type=cJSON_Number;
 	return num;
 }

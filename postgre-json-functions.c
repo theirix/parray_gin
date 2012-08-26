@@ -269,7 +269,7 @@ Datum json_array_to_array_generic_args(PG_FUNCTION_ARGS, int json_type, Oid elem
 bool extract_json_string(cJSON *elem, DatumPtr result)
 {
 	*result = PointerGetDatum(cstring_to_text(elem->valuestring));
-	return false;
+	return true;
 }
 
 bool extract_json_boolean(cJSON *elem, DatumPtr result)
