@@ -36,9 +36,21 @@ select json_array_to_int_array('[42, 43]');
 select json_array_to_bigint_array('[42, 9223372036854]');
 -- {42.4242,43.4343}
 select json_array_to_numeric_array('[42.4242,43.4343]');
--- {"Tue Dec 01 01:23:45 2009"}
-select json_array_to_timestamp_array('["2009-12-01 01:23:45"]');
+-- {"Tue Dec 01 01:23:45 2009","Sat Dec 01 01:23:45 2012"}
+select json_array_to_timestamp_array('["2009-12-01 01:23:45", "2012-12-01 01:23:45"]');
 
+-- {baz1,baz2,baz3}
+select json_object_get_text_array('{"foo":"qq", "bar": ["baz1", "baz2", "baz3"]}', 'bar');
+-- {t,f}
+select json_object_get_boolean_array('{"foo":"qq", "bar": [true, false]}', 'bar');
+-- {42,43}
+select json_object_get_int_array('{"foo":"qq", "bar": [42, 43]}', 'bar');
+-- {42,9223372036854}
+select json_object_get_bigint_array('{"foo":"qq", "bar": [42, 9223372036854]}', 'bar');
+-- {42.4242,43.4343}
+select json_object_get_numeric_array('{"foo":"qq", "bar": [42.4242,43.4343]}', 'bar');
+-- {"Tue Dec 01 01:23:45 2009","Sat Dec 01 01:23:45 2012"}
+select json_object_get_timestamp_array('{"foo":"qq", "bar": ["2009-12-01 01:23:45", "2012-12-01 01:23:45"]}', 'bar');
 
 \t off
 \pset format aligned

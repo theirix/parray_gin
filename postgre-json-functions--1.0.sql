@@ -3,7 +3,9 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION postgre-json-functions" to load this file. \quit
 
--- as normal user
+-- must be run as a normal user
+
+-- Scalar functions
 
 create or replace function json_object_get_text(text, text) returns text
  as 'MODULE_PATHNAME' language C immutable strict;
@@ -23,6 +25,8 @@ create or replace function json_object_get_numeric(text, text) returns numeric
 create or replace function json_object_get_timestamp(text, text) returns timestamp
  as 'MODULE_PATHNAME' language C immutable strict;
 
+-- Array functions
+
 create or replace function json_array_to_text_array(text) returns text[]
  as 'MODULE_PATHNAME' language C immutable strict; 
 
@@ -40,6 +44,27 @@ create or replace function json_array_to_numeric_array(text) returns numeric[]
 
 create or replace function json_array_to_timestamp_array(text) returns timestamp without time zone[]
  as 'MODULE_PATHNAME' language C immutable strict; 
+
+-- Indirect array functions
+
+create or replace function json_object_get_text_array(text, text) returns text[] 
+ as 'MODULE_PATHNAME' language C immutable strict; 
+
+create or replace function json_object_get_boolean_array(text, text) returns boolean[] 
+ as 'MODULE_PATHNAME' language C immutable strict; 
+
+create or replace function json_object_get_int_array(text, text) returns int[] 
+ as 'MODULE_PATHNAME' language C immutable strict; 
+
+create or replace function json_object_get_bigint_array(text, text) returns bigint[] 
+ as 'MODULE_PATHNAME' language C immutable strict; 
+
+create or replace function json_object_get_numeric_array(text, text) returns numeric[] 
+ as 'MODULE_PATHNAME' language C immutable strict; 
+
+create or replace function json_object_get_timestamp_array(text, text) returns timestamp without time zone[]
+ as 'MODULE_PATHNAME' language C immutable strict; 
+
 
 -- GIN support
 
