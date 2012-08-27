@@ -83,12 +83,17 @@ create or replace function json_gin_consistent(internal, internal, internal, int
 create or replace function json_gin_compare_partial(internal, internal, internal, internal) returns internal
  as 'MODULE_PATHNAME' language C immutable strict;
 
--- opclass
+-- GIN operator class
+
+-- Operators: 
+--   text[] op text[]
+--   json_object_get_text_array(val, 'tags') @> array['foo']
+--   json_object_get_text_array(val, 'tags') @< array['all', 'your', 'base']
 
 create operator class json_gin_ops
 for type _text using gin
 as
-	operator	7	@> (anyarray,anyarray),		-- text, text[] 
+	operator	7	@> (anyarray,anyarray),		-- text[], text[] 
 	function	1	json_gin_compare(internal, internal),
 	function	2	json_gin_extract_value(internal, internal, internal),
 	function	3	json_gin_extract_query(internal, internal, internal, internal, internal, internal, internal),

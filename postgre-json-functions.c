@@ -243,7 +243,7 @@ Datum json_object_get_generic(text *argJson, text *argKey, int json_type, pextra
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("cannot parse json string \"%s\"", strJson)));
+				 errmsg("cannot parse json string \"%s\", scalar parser", strJson)));
 	}
 
 	// TODO leak
@@ -355,7 +355,7 @@ Datum json_array_to_array_generic(text *argJson, int json_type, Oid elem_oid, pe
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("cannot parse json string \"%s\"", strJson)));
+				 errmsg("cannot parse json string \"%s\", array parser", strJson)));
 	}
 
 	pfree(strJson);
@@ -584,17 +584,7 @@ json_gin_compare(PG_FUNCTION_ARGS)
 	text *key1 = PG_GETARG_TEXT_P(0);
 	text *key2 = PG_GETARG_TEXT_P(1);
 
-	char *pstr1, *pstr2;
-	int32 result;
-
-	result = DatumGetInt32(DirectFunctionCall2(bttextcmp, PointerGetDatum(key1), PointerGetDatum(key2)));
-
-	/* always log */
-	pstr1 = text_to_cstring(key1);
-	pstr2 = text_to_cstring(key2);
-	elog(PGJSON_TRACE_LEVEL, "GIN compare: key=%s vs key=%s -> %d", pstr1, pstr2, result);
-	pfree(pstr1);
-	pfree(pstr2);
+	int32 result = DatumGetInt32(DirectFunctionCall2Coll(bttextcmp, DEFAULT_COLLATION_OID, PointerGetDatum(key1), PointerGetDatum(key2)));
 
 	PG_RETURN_INT32(result);
 }
@@ -603,22 +593,38 @@ json_gin_compare(PG_FUNCTION_ARGS)
 Datum
 json_gin_extract_value(PG_FUNCTION_ARGS)
 {
-	text *itemValue = PG_GETARG_TEXT_P(0);
+	ArrayType *itemValue = PG_GETARG_ARRAYTYPE_P_COPY(0);
 	int32 *nkeys = (int32*)PG_GETARG_POINTER(1);
+	bool **nullFlags = (bool**)PG_GETARG_POINTER(3);
 
-	char *pstr;
-	ArrayType *keys;
+	Datum *keys;
 
+	int16 elmlen;
+	bool elmbyval;
+	char elmalign;
+	int nelems;
+
+	get_typlenbyvalalign(ARR_ELEMTYPE(itemValue),
+			&elmlen, &elmbyval, &elmalign);
+
+	deconstruct_array(itemValue, ARR_ELEMTYPE(itemValue),
+			elmlen, elmbyval, elmalign,
+			&keys, nullFlags, &nelems);
+
+	*nkeys = nelems;
+
+/*	char *pstr;
+	
 	keys = DatumGetArrayTypeP(json_array_to_array_generic(itemValue, cJSON_String, TEXTOID, extract_json_string));
 	if (keys)
 		*nkeys = ARR_DIMS(keys)[0];
 	else
-		*nkeys = 0;
+		*nkeys = 0;*/
 	
 	/* always log */
-	pstr = text_to_cstring(itemValue);
+	/*pstr = text_to_cstring(itemValue); 
 	elog(PGJSON_TRACE_LEVEL, "GIN extract_value: json=%s -> %d items", pstr, *nkeys);
-	pfree(pstr);
+	pfree(pstr);*/
 
 	PG_RETURN_POINTER(keys);
 }
