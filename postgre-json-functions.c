@@ -18,6 +18,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "access/skey.h"
+#include "access/tuptoaster.h"
 #include "utils/fmgroids.h"
 #include "utils/builtins.h"
 #include "utils/numeric.h"
@@ -38,6 +39,7 @@ PG_MODULE_MAGIC;
 
 /* log level, usually DEBUG5 (silent) or NOTICE (messages are sent to client side) */
 #define PGJSON_TRACE_LEVEL NOTICE
+#define TRACE_LIKE_HELL 1
 
 /* 
  * Strategy */
@@ -66,7 +68,7 @@ bool match_json_types (int type1, int type2);
 const char* json_type_str (int type);
 ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype);
 
-int32 compare_string_prefix(char *a, int lena, char *b, int lenb);
+int32 gin_compare_string_partial(char *a, int lena, char *b, int lenb);
 
 /*
  * Extractors
@@ -114,8 +116,10 @@ Datum json_gin_extract_query(PG_FUNCTION_ARGS);
 Datum json_gin_consistent(PG_FUNCTION_ARGS);
 Datum json_gin_compare_partial(PG_FUNCTION_ARGS);
 
-Datum json_op_text_array_contains(PG_FUNCTION_ARGS);
-Datum json_op_text_array_contained(PG_FUNCTION_ARGS);
+Datum json_op_text_array_contains_partial(PG_FUNCTION_ARGS);
+Datum json_op_text_array_contained_partial(PG_FUNCTION_ARGS);
+Datum text_equal_partial(PG_FUNCTION_ARGS);
+
 
 /*
  * Declare V1 exports
@@ -147,8 +151,9 @@ PG_FUNCTION_INFO_V1(json_gin_extract_query);
 PG_FUNCTION_INFO_V1(json_gin_consistent);
 PG_FUNCTION_INFO_V1(json_gin_compare_partial);
 
-PG_FUNCTION_INFO_V1(json_op_text_array_contains);
-PG_FUNCTION_INFO_V1(json_op_text_array_contained);
+PG_FUNCTION_INFO_V1(json_op_text_array_contains_partial);
+PG_FUNCTION_INFO_V1(json_op_text_array_contained_partial);
+PG_FUNCTION_INFO_V1(text_equal_partial);
 
 /**
  *
@@ -622,9 +627,150 @@ json_op_text_array_contains(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(result);
 }*/
 
+
+static bool
+text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation, bool matchall, bool partial)
+{
+	bool		result = matchall;
+	Oid			element_type = ARR_ELEMTYPE(array1);
+	int			nelems1;
+	Datum		*values2;
+	bool		*nulls2;
+	int			nelems2;
+	int16		typlen16;
+	int			typlen;
+	bool		typbyval;
+	char		typalign;
+	char		*ptr1;
+	bits8		*bitmap1;
+	int			bitmask;
+	int			i;
+	int			j;
+
+	if (element_type != ARR_ELEMTYPE(array2))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("cannot compare arrays of different element types")));
+
+	get_typlenbyvalalign(element_type, &typlen16, &typbyval, &typalign);
+	typlen = typlen16;
+
+	/*
+	 * Since we probably will need to scan array2 multiple times, it's
+	 * worthwhile to use deconstruct_array on it.  We scan array1 the hard way
+	 * however, since we very likely won't need to look at all of it.
+	 */
+	deconstruct_array(array2, element_type, typlen, typbyval, typalign,
+					  &values2, &nulls2, &nelems2);
+
+	/* Loop over source data */
+	nelems1 = ArrayGetNItems(ARR_NDIM(array1), ARR_DIMS(array1));
+	ptr1 = ARR_DATA_PTR(array1);
+	bitmap1 = ARR_NULLBITMAP(array1);
+	bitmask = 1;
+
+	for (i = 0; i < nelems1; i++)
+	{
+		Datum		elt1;
+		bool		isnull1;
+
+		/* Get element, checking for NULL */
+		if (bitmap1 && (*bitmap1 & bitmask) == 0)
+		{
+			isnull1 = true;
+			elt1 = (Datum) 0;
+		}
+		else
+		{
+			isnull1 = false;
+			elt1 = fetch_att(ptr1, typbyval, typlen);
+			ptr1 = att_addlength_pointer(ptr1, typlen, ptr1);
+			ptr1 = (char *) att_align_nominal(ptr1, typalign);
+		}
+
+		/* advance bitmap pointer if any */
+		bitmask <<= 1;
+		if (bitmask == 0x100)
+		{
+			if (bitmap1)
+				bitmap1++;
+			bitmask = 1;
+		}
+
+		/*
+		 * We assume that the comparison operator is strict, so a NULL can't
+		 * match anything.	XXX this diverges from the "NULL=NULL" behavior of
+		 * array_eq, should we act like that?
+		 */
+		if (isnull1)
+		{
+			if (matchall)
+			{
+				result = false;
+				break;
+			}
+			continue;
+		}
+
+		for (j = 0; j < nelems2; j++)
+		{
+			Datum		elt2 = values2[j];
+			bool		isnull2 = nulls2[j];
+			bool		oprresult;
+
+			if (isnull2)
+				continue;		/* can't match */
+
+			/*
+			 * Apply the operator to the element pair
+			 */
+			if (partial)
+				oprresult = DatumGetBool(DirectFunctionCall2Coll(text_equal_partial, collation, elt1, elt2));
+			else
+				oprresult = DatumGetBool(DirectFunctionCall2Coll(texteq, collation, elt1, elt2));
+			if (oprresult)
+				break;
+		}
+
+		if (j < nelems2)
+		{
+			/* found a match for elt1 */
+			if (!matchall)
+			{
+				result = true;
+				break;
+			}
+		}
+		else
+		{
+			/* no match for elt1 */
+			if (matchall)
+			{
+				result = false;
+				break;
+			}
+		}
+	}
+
+	pfree(values2);
+	pfree(nulls2);
+
+	return result;
+}
+
+
+#if 0
 Datum
 json_op_text_array_contains(PG_FUNCTION_ARGS)
 {
+#if TRACE_LIKE_HELL
+	char *pstr1, *pstr2;
+	pstr1 = text_to_cstring(DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PG_GETARG_DATUM(0), CStringGetTextDatum("#"))));
+	pstr2 = text_to_cstring(DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PG_GETARG_DATUM(1), CStringGetTextDatum("#"))));
+	elog(PGJSON_TRACE_LEVEL, "GIN @@> operator: %s @@> %s", pstr1, pstr2);
+	pfree(pstr1);
+	pfree(pstr2);
+#endif
 	/* can't use directfunctioncall becase arraycontains deal with fmgrinfo */
 	return OidFunctionCall2Coll(F_ARRAYCONTAINS, PG_GET_COLLATION(), PG_GETARG_DATUM(0), PG_GETARG_DATUM(1));
 }
@@ -632,8 +778,42 @@ json_op_text_array_contains(PG_FUNCTION_ARGS)
 Datum
 json_op_text_array_contained(PG_FUNCTION_ARGS)
 {
-	return OidFunctionCall2Coll(F_ARRAYCONTAINED, PG_GET_COLLATION(), PG_GETARG_DATUM(0), PG_GETARG_DATUM(1));
+	return DirectFunctionCall2Coll(json_op_text_array_contains, PG_GET_COLLATION(), PG_GETARG_DATUM(1), PG_GETARG_DATUM(0));
 }
+#else
+
+Datum
+json_op_text_array_contains_partial(PG_FUNCTION_ARGS)
+{
+	ArrayType  *array1 = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *array2 = PG_GETARG_ARRAYTYPE_P(1);
+	Oid			collation = PG_GET_COLLATION();
+	bool		result;
+
+	result = text_array_contains_partial(array2, array1, collation, true, true);
+
+	PG_FREE_IF_COPY(array1, 0);
+	PG_FREE_IF_COPY(array2, 1);
+
+	PG_RETURN_BOOL(result);
+}
+
+Datum
+json_op_text_array_contained_partial(PG_FUNCTION_ARGS)
+{
+	ArrayType  *array1 = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *array2 = PG_GETARG_ARRAYTYPE_P(1);
+	Oid			collation = PG_GET_COLLATION();
+	bool		result;
+
+	result = text_array_contains_partial(array1, array2, collation, true, true);
+
+	PG_FREE_IF_COPY(array1, 0);
+	PG_FREE_IF_COPY(array2, 1);
+
+	PG_RETURN_BOOL(result);
+}
+#endif
 
 
 /**
@@ -652,12 +832,13 @@ json_gin_compare(PG_FUNCTION_ARGS)
 
 	int32 result = DatumGetInt32(DirectFunctionCall2Coll(bttextcmp, DEFAULT_COLLATION_OID, PointerGetDatum(key1), PointerGetDatum(key2)));
 
-	/* always log */
+#if TRACE_LIKE_HELL
 	pstr1 = text_to_cstring(key1);
 	pstr2 = text_to_cstring(key2);
 	elog(PGJSON_TRACE_LEVEL, "GIN compare: %s vs %s -> %d", pstr1, pstr2, result);
 	pfree(pstr1);
 	pfree(pstr2);
+#endif
 
 	PG_RETURN_INT32(result);
 }
@@ -696,8 +877,8 @@ json_gin_extract_value(PG_FUNCTION_ARGS)
 	else
 		*nkeys = 0;*/
 	
-	/* always log */
-    tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(itemValue), CStringGetTextDatum("#")));
+#if TRACE_LIKE_HELL
+	tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(itemValue), CStringGetTextDatum("#")));
 	pstr = text_to_cstring(tstr);
 	elog(PGJSON_TRACE_LEVEL, "GIN extract_value: %d items, %s", *nkeys, pstr);
 	for (i = 0; i < *nkeys; ++i)
@@ -705,6 +886,7 @@ json_gin_extract_value(PG_FUNCTION_ARGS)
 		elog(PGJSON_TRACE_LEVEL, "  extract_value item %d = %s", i, text_to_cstring(DatumGetTextP(keys[i])));
 	}
 	pfree(pstr);
+#endif
 
 	PG_RETURN_POINTER(keys);
 }
@@ -761,16 +943,17 @@ json_gin_extract_query(PG_FUNCTION_ARGS)
 		}
 	}
 
-	/* always log */
-    tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(queryArray), CStringGetTextDatum("#")));
+#if TRACE_LIKE_HELL
+	tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(queryArray), CStringGetTextDatum("#")));
 	pstr = text_to_cstring(tstr);
 	elog(PGJSON_TRACE_LEVEL, "GIN extract_query: json=%s strategy=%d -> %d items", 
 			pstr, (int)strategy, (int)*nkeys);
-	pfree(pstr);
 	for (i = 0; i < *nkeys; ++i)
 	{
 		elog(PGJSON_TRACE_LEVEL, "  extract_query item %d = %s", i, text_to_cstring(DatumGetTextP(keys[i])));
 	}
+	pfree(pstr);
+#endif
 	
 	PG_RETURN_POINTER(keys);
 }
@@ -803,35 +986,72 @@ json_gin_consistent(PG_FUNCTION_ARGS)
 			result = false;
 	}
 
-	/* always log */
+#if TRACE_LIKE_HELL
 	elog(PGJSON_TRACE_LEVEL, "GIN consistent: %d keys, strategy=%d -> %s", 
 			(int)nkeys, (int)strategy, result?"true":"false");
+#endif
+
+	PG_RETURN_BOOL(result);
+}
+
+/* 
+ * Prefix equal for two text arguments
+ * Returns true iff arg2 has partial arg1 (so arg2 is larger)
+ */
+Datum
+text_equal_partial(PG_FUNCTION_ARGS)
+{
+	Datum arg1 = PG_GETARG_DATUM(0);
+	Datum arg2 = PG_GETARG_DATUM(1);
+	bool result;
+	Size len1, len2;
+	text *targ1, *targ2;
+
+	len1 = toast_raw_datum_size(arg1);
+	len2 = toast_raw_datum_size(arg2);
+
+	targ1 = DatumGetTextPP(arg1);
+	targ2 = DatumGetTextPP(arg2);
+
+	/*if (len1 == 0)
+	{
+		result = true;
+	}
+	else if (len2 == 0)
+	{
+		result = false;
+	}
+	else
+	{
+		cmp = memcmp(VARDATA_ANY(targ1), VARDATA_ANY(targ2), Min(len1,len2));
+		result = cmp == 0 && len2 > len1;
+	}*/
+	result = gin_compare_string_partial(VARDATA_ANY(targ1), len1 - VARHDRSZ, VARDATA_ANY(targ2), len2 - VARHDRSZ) == 0;
+
+	PG_FREE_IF_COPY(targ1, 0);
+	PG_FREE_IF_COPY(targ2, 1);
 
 	PG_RETURN_BOOL(result);
 }
 
 /*
- * Derived from tsearc2 tsCompareString
+ * Derived from tsearch2's tsCompareString
  * Compare two strings by tsvector rules.
- * if isPrefix = true then it returns zero value iff b has prefix a
+ * returns zero value iff b has partial a (b is larger)
+ * TODO XXX currently it's only a prefix search *
  */
-int32
-compare_string_prefix(char *a, int lena, char *b, int lenb)
+int
+gin_compare_string_partial(char *a, int lena, char *b, int lenb)
 {
 	int cmp;
 
 	if (lena == 0)
-	{
 		cmp = 0;            /* empty string is prefix of anything */
-	}
 	else if (lenb == 0)
-	{
-		cmp = (lena > 0) ? 1 : 0;
-	}
+		cmp = 1;
 	else
 	{
 		cmp = memcmp(a, b, Min(lena, lenb));
-
 		if (cmp == 0 && lena > lenb)
 			cmp = 1;        /* a is longer, so not a prefix of b */
 	}
@@ -848,7 +1068,7 @@ json_gin_compare_partial(PG_FUNCTION_ARGS)
 
 	char *str_partial_key;
 	char *str_key;
-	int32 result;
+	int result;
 
 	if (strategy != PGJSON_STRATEGY_CONTAINS &&
 			strategy != PGJSON_STRATEGY_CONTAINS_PARTIAL)
@@ -868,11 +1088,12 @@ json_gin_compare_partial(PG_FUNCTION_ARGS)
 	}
 	else if (strategy == PGJSON_STRATEGY_CONTAINS_PARTIAL)
 	{
-		result = compare_string_prefix(str_partial_key, strlen(str_partial_key), str_key, strlen(str_key));
+		result = gin_compare_string_partial(str_partial_key, strlen(str_partial_key), str_key, strlen(str_key));
 	}
 
-	/* always log */
+#if TRACE_LIKE_HELL
 	elog(PGJSON_TRACE_LEVEL, "GIN compare_partial: partial_key=%s key=%s -> %d", str_partial_key, str_key, result);
+#endif
 
 	pfree(str_partial_key);
 	pfree(str_key);

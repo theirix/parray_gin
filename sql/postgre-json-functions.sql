@@ -1,10 +1,14 @@
+set client_min_messages to 'error';
+drop extension if exists "postgre-json-functions";
 create extension "postgre-json-functions";
+set client_min_messages to 'notice';
+
 \t on
 \pset format unaligned
 
 -- qq
 select json_object_get_text('{"foo":"qq", "bar": true}', 'foo');
--- true
+-- t
 select json_object_get_boolean('{"foo":"qq", "bar": true}', 'bar');
 -- 42
 select json_object_get_int('{"baz": 42, "boo": 42.424242}', 'baz');
@@ -19,12 +23,10 @@ select json_object_get_numeric('{"baz": 42, "boo": 42.424242}', 'boo');
 select json_object_get_timestamp('{"foo":"qq", "bar": "2009-12-01 01:23:45"}', 'bar');
 set time zone EST;
 -- 2009-12-01 01:23:45
-select to_char(json_object_get_timestamp('{"foo":"qq", "bar": "2009-12-01 01:23:45"}', 'bar'),
-          'YYYY-MM-DD HH:MI:SSTZ');
+select to_char(json_object_get_timestamp('{"foo":"qq", "bar": "2009-12-01 01:23:45"}', 'bar'), 'YYYY-MM-DD HH:MI:SSTZ');
 set time zone "Europe/Moscow";
 -- 2009-12-01 01:23:45
-select to_char(json_object_get_timestamp('{"foo":"qq", "bar": "2009-12-01 01:23:45"}', 'bar'),
-          'YYYY-MM-DD HH:MI:SSTZ');
+select to_char(json_object_get_timestamp('{"foo":"qq", "bar": "2009-12-01 01:23:45"}', 'bar'), 'YYYY-MM-DD HH:MI:SSTZ');
 
 -- {foo,bar}
 select json_array_to_text_array('["foo", "bar"]');

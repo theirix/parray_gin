@@ -1,7 +1,7 @@
 /* postgre-json-functions--1.0.sql */
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
-\echo Use "CREATE EXTENSION postgre-json-functions" to load this file. \quit
+\echo Use "CREATE EXTENSION \"postgre-json-functions\"" to load this file. \quit
 
 -- must be run as a normal user
 
@@ -91,25 +91,31 @@ create or replace function json_gin_compare_partial(internal, internal, internal
 --   json_object_get_text_array(val, 'tags') @@> array['ba'] - partial contains
 --   json_object_get_text_array(val, 'tags') @< array['all', 'your', 'base'] - NOT USED strict contained by
 
-create or replace function json_op_text_array_contains(_text, _text) returns bool
+create or replace function json_op_text_array_contains_partial(_text, _text) returns bool
  as 'MODULE_PATHNAME' language C immutable strict;
 
-create or replace function json_op_text_array_contained(_text, _text) returns bool
+comment on function json_op_text_array_contains_partial(_text,_text) is 'text array contains compared by partial';
+
+create or replace function json_op_text_array_contained_partial(_text, _text) returns bool
  as 'MODULE_PATHNAME' language C immutable strict;
 
+comment on function json_op_text_array_contained_partial(_text,_text) is 'text array contained compared by partial';
+
+-- partial contains
 create operator @@> (
   leftarg = _text,
   rightarg = _text,
-  procedure = json_op_text_array_contains,
+  procedure = json_op_text_array_contains_partial,
   commutator = '<@@',
   restrict = contsel,
   join = contjoinsel
 );
 
+-- partial contained by
 create operator <@@ (
   leftarg = _text,
   rightarg = _text,
-  procedure = json_op_text_array_contained,
+  procedure = json_op_text_array_contained_partial,
   commutator = '@@>',
   restrict = contsel,
   join = contjoinsel

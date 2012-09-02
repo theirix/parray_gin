@@ -4,7 +4,7 @@ OBJS = postgre-json-functions.o cJSON.o
 EXTENSION = postgre-json-functions
 DATA = postgre-json-functions--1.0.sql 
 
-REGRESS = postgre-json-functions
+REGRESS = postgre-json-functions postgre-json-gin
 REGRESS_OPTS = --user postgres
 
 PG_CPPFLAGS = -g -O0
