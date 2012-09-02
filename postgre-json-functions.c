@@ -26,6 +26,7 @@
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 #include "utils/formatting.h"
+#include "utils/fmgroids.h"
 
 /*
  * Note. cJSON should be patched for this extension.
@@ -42,8 +43,10 @@ PG_MODULE_MAGIC;
  * Strategy */
 /* @> operator strategy */
 #define PGJSON_STRATEGY_CONTAINS 7
-/* <@ operator strategy */
-#define PGJSON_STRATEGY_CONTAINED_BY 8
+/* @@> operator strategy */
+#define PGJSON_STRATEGY_CONTAINS_PARTIAL 8
+/* <@@ operator strategy 
+#define PGJSON_STRATEGY_CONTAINED_BY_PARTIAL 9 */
 
 /* TODO a little hackish format string */
 #define NUMERIC_FMT "99999999999999999999999999999999999999.99999999999999999999999999999999999999"
@@ -62,6 +65,8 @@ Datum json_array_to_array_generic_args(PG_FUNCTION_ARGS, int json_type, Oid elem
 bool match_json_types (int type1, int type2);
 const char* json_type_str (int type);
 ArrayType* construct_typed_array(Datum *elems, int nelems, Oid elmtype);
+
+int32 compare_string_prefix(char *a, int lena, char *b, int lenb);
 
 /*
  * Extractors
@@ -109,6 +114,9 @@ Datum json_gin_extract_query(PG_FUNCTION_ARGS);
 Datum json_gin_consistent(PG_FUNCTION_ARGS);
 Datum json_gin_compare_partial(PG_FUNCTION_ARGS);
 
+Datum json_op_text_array_contains(PG_FUNCTION_ARGS);
+Datum json_op_text_array_contained(PG_FUNCTION_ARGS);
+
 /*
  * Declare V1 exports
  */
@@ -138,6 +146,9 @@ PG_FUNCTION_INFO_V1(json_gin_extract_value);
 PG_FUNCTION_INFO_V1(json_gin_extract_query);
 PG_FUNCTION_INFO_V1(json_gin_consistent);
 PG_FUNCTION_INFO_V1(json_gin_compare_partial);
+
+PG_FUNCTION_INFO_V1(json_op_text_array_contains);
+PG_FUNCTION_INFO_V1(json_op_text_array_contained);
 
 /**
  *
@@ -574,6 +585,59 @@ Datum json_object_get_timestamp_array(PG_FUNCTION_ARGS)
 
 /**
  *
+ * Operator support
+ *
+ */
+
+/*Datum
+json_op_text_array_contains(PG_FUNCTION_ARGS)
+{
+	ArrayType *array_a = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType *array_b = PG_GETARG_ARRAYTYPE_P(1);
+
+	bool result;
+	text *a, *b;
+	int acount, bcount;
+	int i,j;
+
+	if ((ARR_HASNULL(a) && array_contains_nulls(a)) || 
+		(ARR_HASNULL(b) && array_contains_nulls(b)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+				 errmsg("array must not contain nulls")));
+
+	acount = ARR_DIMS(a)[0];
+	bcount = ARR_DIMS(b)[0];
+
+	for (i = 0; i < bcount; ++i)
+	{
+		for (j = 0; j < acount; ++j)
+		{
+			if (
+		}
+
+	}
+
+
+	PG_RETURN_BOOL(result);
+}*/
+
+Datum
+json_op_text_array_contains(PG_FUNCTION_ARGS)
+{
+	/* can't use directfunctioncall becase arraycontains deal with fmgrinfo */
+	return OidFunctionCall2Coll(F_ARRAYCONTAINS, PG_GET_COLLATION(), PG_GETARG_DATUM(0), PG_GETARG_DATUM(1));
+}
+
+Datum
+json_op_text_array_contained(PG_FUNCTION_ARGS)
+{
+	return OidFunctionCall2Coll(F_ARRAYCONTAINED, PG_GET_COLLATION(), PG_GETARG_DATUM(0), PG_GETARG_DATUM(1));
+}
+
+
+/**
+ *
  * GIN support
  *
  */
@@ -584,7 +648,16 @@ json_gin_compare(PG_FUNCTION_ARGS)
 	text *key1 = PG_GETARG_TEXT_P(0);
 	text *key2 = PG_GETARG_TEXT_P(1);
 
+	char *pstr1, *pstr2;
+
 	int32 result = DatumGetInt32(DirectFunctionCall2Coll(bttextcmp, DEFAULT_COLLATION_OID, PointerGetDatum(key1), PointerGetDatum(key2)));
+
+	/* always log */
+	pstr1 = text_to_cstring(key1);
+	pstr2 = text_to_cstring(key2);
+	elog(PGJSON_TRACE_LEVEL, "GIN compare: %s vs %s -> %d", pstr1, pstr2, result);
+	pfree(pstr1);
+	pfree(pstr2);
 
 	PG_RETURN_INT32(result);
 }
@@ -598,6 +671,10 @@ json_gin_extract_value(PG_FUNCTION_ARGS)
 	bool **nullFlags = (bool**)PG_GETARG_POINTER(3);
 
 	Datum *keys;
+
+	text *tstr;
+	char *pstr;
+	int i;
 
 	int16 elmlen;
 	bool elmbyval;
@@ -613,18 +690,21 @@ json_gin_extract_value(PG_FUNCTION_ARGS)
 
 	*nkeys = nelems;
 
-/*	char *pstr;
-	
-	keys = DatumGetArrayTypeP(json_array_to_array_generic(itemValue, cJSON_String, TEXTOID, extract_json_string));
+/*	keys = DatumGetArrayTypeP(json_array_to_array_generic(itemValue, cJSON_String, TEXTOID, extract_json_string));
 	if (keys)
 		*nkeys = ARR_DIMS(keys)[0];
 	else
 		*nkeys = 0;*/
 	
 	/* always log */
-	/*pstr = text_to_cstring(itemValue); 
-	elog(PGJSON_TRACE_LEVEL, "GIN extract_value: json=%s -> %d items", pstr, *nkeys);
-	pfree(pstr);*/
+    tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(itemValue), CStringGetTextDatum("#")));
+	pstr = text_to_cstring(tstr);
+	elog(PGJSON_TRACE_LEVEL, "GIN extract_value: %d items, %s", *nkeys, pstr);
+	for (i = 0; i < *nkeys; ++i)
+	{
+		elog(PGJSON_TRACE_LEVEL, "  extract_value item %d = %s", i, text_to_cstring(DatumGetTextP(keys[i])));
+	}
+	pfree(pstr);
 
 	PG_RETURN_POINTER(keys);
 }
@@ -636,37 +716,61 @@ json_gin_extract_query(PG_FUNCTION_ARGS)
 	Datum query = PG_GETARG_DATUM(0);
 	int32 *nkeys = (int32*)PG_GETARG_POINTER(1);
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
+	bool **pmatch = (bool**)PG_GETARG_POINTER(3);
 	bool **nullFlags = (bool**)PG_GETARG_POINTER(5);
 	
+	char *pstr;
+	text *tstr;
+
 	ArrayType *queryArray;
 	Datum *keys;
+	int i;
 
 	int16 elmlen;
 	bool elmbyval;
 	char elmalign;
 	int nelems;
 
-	if (strategy == PGJSON_STRATEGY_CONTAINS)
-	{
-		queryArray = DatumGetArrayTypePCopy(query);
-		/* query is an array of texts, parse it and return */
-		get_typlenbyvalalign(ARR_ELEMTYPE(queryArray),
-				&elmlen, &elmbyval, &elmalign);
-
-		deconstruct_array(queryArray, ARR_ELEMTYPE(queryArray),
-				elmlen, elmbyval, elmalign,
-				&keys, nullFlags, &nelems);
-
-		*nkeys = nelems;
-	}
-	else 
+	if (strategy != PGJSON_STRATEGY_CONTAINS &&
+			strategy != PGJSON_STRATEGY_CONTAINS_PARTIAL)
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
 
+	queryArray = DatumGetArrayTypePCopy(query);
+	/* query is an array of texts, parse it and return */
+	get_typlenbyvalalign(ARR_ELEMTYPE(queryArray),
+			&elmlen, &elmbyval, &elmalign);
+
+	deconstruct_array(queryArray, ARR_ELEMTYPE(queryArray),
+			elmlen, elmbyval, elmalign,
+			&keys, nullFlags, &nelems);
+
+	*nkeys = nelems;
+
+	if (strategy == PGJSON_STRATEGY_CONTAINS)
+	{
+		*pmatch = NULL;
+	}
+	else if (strategy == PGJSON_STRATEGY_CONTAINS_PARTIAL)
+	{
+		*pmatch = (bool*)palloc(sizeof(bool) * *nkeys);
+		for (i = 0; i < *nkeys; ++i)
+		{
+			*pmatch[i] = TRUE;
+		}
+	}
+
 	/* always log */
-	elog(PGJSON_TRACE_LEVEL, "GIN extract_query: json= strategy=%d -> %d items", 
-			strategy, *nkeys);
+    tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(queryArray), CStringGetTextDatum("#")));
+	pstr = text_to_cstring(tstr);
+	elog(PGJSON_TRACE_LEVEL, "GIN extract_query: json=%s strategy=%d -> %d items", 
+			pstr, (int)strategy, (int)*nkeys);
+	pfree(pstr);
+	for (i = 0; i < *nkeys; ++i)
+	{
+		elog(PGJSON_TRACE_LEVEL, "  extract_query item %d = %s", i, text_to_cstring(DatumGetTextP(keys[i])));
+	}
 	
 	PG_RETURN_POINTER(keys);
 }
@@ -685,33 +789,95 @@ json_gin_consistent(PG_FUNCTION_ARGS)
 	bool result = false;
 	int i;
 
-	if (strategy == PGJSON_STRATEGY_CONTAINS)
-	{
-		*recheck = true;
-		result = true;
-		for (i = 0; i < nkeys; ++i)
-		{
-			if (!check[i])
-				result = false;
-		}
-	}
-	else 
+	if (strategy != PGJSON_STRATEGY_CONTAINS && 
+			strategy != PGJSON_STRATEGY_CONTAINS_PARTIAL)
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
-	
+
+	*recheck = true;
+	result = true;
+	for (i = 0; i < nkeys; ++i)
+	{
+		if (!check[i])
+			result = false;
+	}
+
 	/* always log */
 	elog(PGJSON_TRACE_LEVEL, "GIN consistent: %d keys, strategy=%d -> %s", 
-			nkeys, strategy, result?"true":"false");
+			(int)nkeys, (int)strategy, result?"true":"false");
 
 	PG_RETURN_BOOL(result);
+}
+
+/*
+ * Derived from tsearc2 tsCompareString
+ * Compare two strings by tsvector rules.
+ * if isPrefix = true then it returns zero value iff b has prefix a
+ */
+int32
+compare_string_prefix(char *a, int lena, char *b, int lenb)
+{
+	int cmp;
+
+	if (lena == 0)
+	{
+		cmp = 0;            /* empty string is prefix of anything */
+	}
+	else if (lenb == 0)
+	{
+		cmp = (lena > 0) ? 1 : 0;
+	}
+	else
+	{
+		cmp = memcmp(a, b, Min(lena, lenb));
+
+		if (cmp == 0 && lena > lenb)
+			cmp = 1;        /* a is longer, so not a prefix of b */
+	}
+
+	return cmp;
 }
 
 Datum
 json_gin_compare_partial(PG_FUNCTION_ARGS)
 {
-	/* not used */
-	PG_RETURN_NULL();
+	text *partial_key = PG_GETARG_TEXT_P(0);
+	text *key = PG_GETARG_TEXT_P(1);
+	StrategyNumber strategy = PG_GETARG_UINT16(2);
+
+	char *str_partial_key;
+	char *str_key;
+	int32 result;
+
+	if (strategy != PGJSON_STRATEGY_CONTAINS &&
+			strategy != PGJSON_STRATEGY_CONTAINS_PARTIAL)
+	{
+		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
+	}
+
+	str_partial_key = text_to_cstring(partial_key); 
+	str_key = text_to_cstring(key); 
+
+	if (strategy == PGJSON_STRATEGY_CONTAINS)
+	{
+		if (strcmp(str_partial_key, str_key))
+			result = 1;
+		else
+			result = 0;
+	}
+	else if (strategy == PGJSON_STRATEGY_CONTAINS_PARTIAL)
+	{
+		result = compare_string_prefix(str_partial_key, strlen(str_partial_key), str_key, strlen(str_key));
+	}
+
+	/* always log */
+	elog(PGJSON_TRACE_LEVEL, "GIN compare_partial: partial_key=%s key=%s -> %d", str_partial_key, str_key, result);
+
+	pfree(str_partial_key);
+	pfree(str_key);
+
+	PG_RETURN_INT32(result);
 }
 
 /* vim: set noexpandtab tabstop=4 shiftwidth=4: */
