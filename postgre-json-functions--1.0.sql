@@ -65,6 +65,9 @@ create or replace function json_object_get_numeric_array(text, text) returns num
 create or replace function json_object_get_timestamp_array(text, text) returns timestamp without time zone[]
  as 'MODULE_PATHNAME' language C immutable strict; 
 
+-- JSON builder
+create or replace function json_object_to_string(text, text) returns text
+ as 'MODULE_PATHNAME' language C immutable strict; 
 
 -- GIN support
 

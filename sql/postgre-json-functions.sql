@@ -1,5 +1,5 @@
 set client_min_messages to 'error';
-drop extension if exists "postgre-json-functions";
+drop extension if exists "postgre-json-functions" cascade;
 create extension "postgre-json-functions";
 set client_min_messages to 'notice';
 
@@ -53,6 +53,15 @@ select json_object_get_bigint_array('{"foo":"qq", "bar": [42, 9223372036854]}', 
 select json_object_get_numeric_array('{"foo":"qq", "bar": [42.4242,43.4343]}', 'bar');
 -- {"Tue Dec 01 01:23:45 2009","Sat Dec 01 01:23:45 2012"}
 select json_object_get_timestamp_array('{"foo":"qq", "bar": ["2009-12-01 01:23:45", "2012-12-01 01:23:45"]}', 'bar');
+
+-- "qq"
+select json_object_to_string('{"foo":"qq", "bar": ["baz1", "baz2", "baz3"]}', 'foo');
+-- ["baz1","baz2","baz3"]
+select json_object_to_string('{"foo":"qq", "bar": ["baz1", "baz2", "baz3"]}', 'bar');
+-- {baz1,baz2,baz3}
+select json_array_to_text_array(json_object_to_string('{"foo":"qq", "bar": ["baz1", "baz2", "baz3"]}', 'bar'));
+-- baz2
+select (json_array_to_text_array(json_object_to_string('{"foo":"qq", "bar": ["baz1", "baz2", "baz3"]}', 'bar')))[2];
 
 \t off
 \pset format aligned

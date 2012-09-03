@@ -54,6 +54,9 @@ PG_MODULE_MAGIC;
 /* TODO a little hackish format string */
 #define NUMERIC_FMT "99999999999999999999999999999999999999.99999999999999999999999999999999999999"
 
+/* Choosen to not override with any of cJSON types */
+#define CJSON_TYPE_ANY 99
+
 /*
  * Internal functions declarations
  */
@@ -88,6 +91,8 @@ bool extract_bigint_array(cJSON *elem, DatumPtr result);
 bool extract_numeric_array(cJSON *elem, DatumPtr result);
 bool extract_timestamp_array(cJSON *elem, DatumPtr result);
 
+bool extract_json_to_string(cJSON *elem, DatumPtr result);
+
 /*
  * Exported functions
  */
@@ -110,6 +115,8 @@ Datum json_object_get_int_array(PG_FUNCTION_ARGS);
 Datum json_object_get_bigint_array(PG_FUNCTION_ARGS);
 Datum json_object_get_numeric_array(PG_FUNCTION_ARGS);
 Datum json_object_get_timestamp_array(PG_FUNCTION_ARGS);
+
+Datum json_object_to_string(PG_FUNCTION_ARGS);
 
 Datum json_gin_compare(PG_FUNCTION_ARGS);
 Datum json_gin_extract_value(PG_FUNCTION_ARGS);
@@ -145,6 +152,8 @@ PG_FUNCTION_INFO_V1(json_object_get_int_array);
 PG_FUNCTION_INFO_V1(json_object_get_bigint_array);
 PG_FUNCTION_INFO_V1(json_object_get_numeric_array);
 PG_FUNCTION_INFO_V1(json_object_get_timestamp_array);
+
+PG_FUNCTION_INFO_V1(json_object_to_string);
 
 PG_FUNCTION_INFO_V1(json_gin_compare);
 PG_FUNCTION_INFO_V1(json_gin_extract_value);
@@ -225,7 +234,7 @@ Datum json_object_get_generic(text *argJson, text *argKey, int json_type, pextra
 		sel = cJSON_GetObjectItem(root, strKey);
 		if (sel)
 		{
-			if (match_json_types(json_type, sel->type))
+			if (json_type == CJSON_TYPE_ANY || match_json_types(json_type, sel->type))
 			{
 				if (extractor(sel, &result))
 				{
@@ -311,7 +320,7 @@ Datum json_array_to_array_generic_impl(cJSON *jsonArray, int json_type, Oid elem
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("no childs allowed")));
-		if (!match_json_types(json_type, elem->type))
+		if (!(json_type == CJSON_TYPE_ANY || match_json_types(json_type, elem->type)))
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("expected value of type %s, actual %s at %d position", 
@@ -482,6 +491,16 @@ bool extract_timestamp_array(cJSON *elem, DatumPtr result)
 	return true;
 }
 
+bool extract_json_to_string(cJSON *elem, DatumPtr result)
+{
+	char *pstr;
+	pstr = cJSON_PrintUnformatted(elem);
+	*result = PointerGetDatum(cstring_to_text(pstr));
+	free(pstr);
+	return true;
+}
+
+
 /**
  *
  * Exported functions
@@ -559,6 +578,7 @@ Datum json_array_to_timestamp_array(PG_FUNCTION_ARGS)
 /*
  * Indirect array functions
  */
+
 Datum json_object_get_text_array(PG_FUNCTION_ARGS)
 {
 	return json_object_get_generic_args(fcinfo, cJSON_Array, extract_text_array);
@@ -587,6 +607,14 @@ Datum json_object_get_numeric_array(PG_FUNCTION_ARGS)
 Datum json_object_get_timestamp_array(PG_FUNCTION_ARGS)
 {
 	return json_object_get_generic_args(fcinfo, cJSON_Array, extract_timestamp_array);
+}
+
+/* Get object by key and converts it back to text
+ * Used as a proxy call 
+ */
+Datum json_object_to_string(PG_FUNCTION_ARGS)
+{
+	return json_object_get_generic_args(fcinfo, CJSON_TYPE_ANY, extract_json_to_string);
 }
 
 /**
@@ -900,7 +928,7 @@ json_gin_extract_query(PG_FUNCTION_ARGS)
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
 	bool **pmatch = (bool**)PG_GETARG_POINTER(3);
 	bool **nullFlags = (bool**)PG_GETARG_POINTER(5);
-	int32 *searchMode = (int32*)PG_GETARG_POINTER(6);
+	/* int32 *searchMode = (int32*)PG_GETARG_POINTER(6);*/
 
 	ArrayType *queryArray;
 	Datum *keys;
