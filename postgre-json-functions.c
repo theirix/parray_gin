@@ -38,8 +38,10 @@
 
 PG_MODULE_MAGIC;
 
-/* log level, usually DEBUG5 (silent) or NOTICE (messages are sent to client side) */
+/* Log level, usually DEBUG5 (silent) or NOTICE (messages are sent to client side) */
 #define PGJSON_TRACE_LEVEL NOTICE
+
+/* Controls logging from GIN functions. A lot of output */
 #define TRACE_LIKE_HELL 0
 
 /* 
@@ -182,6 +184,9 @@ bool match_json_types (int type1, int type2)
 		: type1 == type2;
 }
 
+/*
+ * Pretty print json type
+ */
 const char* json_type_str (int type)
 {
 	switch (type)
@@ -272,7 +277,6 @@ Datum json_object_get_generic(text *argJson, text *argKey, int json_type, pextra
 				 errmsg("cannot parse json string \"%s\", scalar parser", strJson)));
 	}
 
-	// TODO leak
 	pfree(strJson);
 	pfree(strKey);
 	
@@ -399,6 +403,8 @@ Datum json_array_to_array_generic_args(PG_FUNCTION_ARGS, int json_type, Oid elem
 
 /*
  * Concrete json data extractors
+ * Parse given json object and returns needed datum
+ * Datum is passed directly as a result of function
  */
 
 bool extract_json_string(cJSON *elem, DatumPtr result)
@@ -623,40 +629,6 @@ Datum json_object_to_string(PG_FUNCTION_ARGS)
  *
  */
 
-/*Datum
-json_op_text_array_contains(PG_FUNCTION_ARGS)
-{
-	ArrayType *array_a = PG_GETARG_ARRAYTYPE_P(0);
-	ArrayType *array_b = PG_GETARG_ARRAYTYPE_P(1);
-
-	bool result;
-	text *a, *b;
-	int acount, bcount;
-	int i,j;
-
-	if ((ARR_HASNULL(a) && array_contains_nulls(a)) || 
-		(ARR_HASNULL(b) && array_contains_nulls(b)))
-		ereport(ERROR,
-				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
-				 errmsg("array must not contain nulls")));
-
-	acount = ARR_DIMS(a)[0];
-	bcount = ARR_DIMS(b)[0];
-
-	for (i = 0; i < bcount; ++i)
-	{
-		for (j = 0; j < acount; ++j)
-		{
-			if (
-		}
-
-	}
-
-
-	PG_RETURN_BOOL(result);
-}*/
-
-
 static bool
 text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation, bool matchall, bool partial)
 {
@@ -788,29 +760,11 @@ text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation,
 }
 
 
-#if 0
-Datum
-json_op_text_array_contains(PG_FUNCTION_ARGS)
-{
-#if TRACE_LIKE_HELL
-	char *pstr1, *pstr2;
-	pstr1 = text_to_cstring(DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PG_GETARG_DATUM(0), CStringGetTextDatum("#"))));
-	pstr2 = text_to_cstring(DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PG_GETARG_DATUM(1), CStringGetTextDatum("#"))));
-	elog(PGJSON_TRACE_LEVEL, "GIN @@> operator: %s @@> %s", pstr1, pstr2);
-	pfree(pstr1);
-	pfree(pstr2);
-#endif
-	/* can't use directfunctioncall becase arraycontains deal with fmgrinfo */
-	return OidFunctionCall2Coll(F_ARRAYCONTAINS, PG_GET_COLLATION(), PG_GETARG_DATUM(0), PG_GETARG_DATUM(1));
-}
-
-Datum
-json_op_text_array_contained(PG_FUNCTION_ARGS)
-{
-	return DirectFunctionCall2Coll(json_op_text_array_contains, PG_GET_COLLATION(), PG_GETARG_DATUM(1), PG_GETARG_DATUM(0));
-}
-#else
-
+/* 
+ * Underlying functions for @@> and <@@ operators
+ * Compare arrays for contains/contained by
+ * Elements are text and compared partially (substring)
+ */
 Datum
 json_op_text_array_contains_partial(PG_FUNCTION_ARGS)
 {
@@ -827,6 +781,9 @@ json_op_text_array_contains_partial(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(result);
 }
 
+/* 
+ * Paired <@@ function, see note above
+ */
 Datum
 json_op_text_array_contained_partial(PG_FUNCTION_ARGS)
 {
@@ -842,7 +799,6 @@ json_op_text_array_contained_partial(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(result);
 }
-#endif
 
 
 /**
@@ -851,6 +807,10 @@ json_op_text_array_contained_partial(PG_FUNCTION_ARGS)
  *
  */
 
+/* 
+ * Compare two keys
+ * Strict compare
+ */
 Datum
 json_gin_compare(PG_FUNCTION_ARGS)
 {
@@ -873,7 +833,10 @@ json_gin_compare(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(result);
 }
 
-/* (Datum itemValue, int32 *nkeys, bool **nullFlags) */
+/* 
+ * Extract keys from indexed item
+ * Keys are text, item is an array text[]
+ * (Datum itemValue, int32 *nkeys, bool **nullFlags) */
 Datum
 json_gin_extract_value(PG_FUNCTION_ARGS)
 {
@@ -919,7 +882,10 @@ json_gin_extract_value(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(keys);
 }
 
-/* (Datum query, int32 *nkeys, StrategyNumber n, bool **pmatch, Pointer **extra_data, bool **nullFlags, int32 *searchMode) */
+/* 
+ * Parse query (rhs) to the keys
+ * They are similar to keys extracted from an indexed item
+ * (Datum query, int32 *nkeys, StrategyNumber n, bool **pmatch, Pointer **extra_data, bool **nullFlags, int32 *searchMode) */
 Datum
 json_gin_extract_query(PG_FUNCTION_ARGS)
 {
@@ -995,7 +961,11 @@ json_gin_extract_query(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(keys);
 }
 
-/* bool check[], StrategyNumber n, Datum query, int32 nkeys,
+/* 
+ * Consistent function
+ * Assume we have AND operation
+ * Needs to be rethinked
+ * bool check[], StrategyNumber n, Datum query, int32 nkeys,
 		Pointer extra_data[], bool *recheck, Datum queryKeys[], bool nullFlags[]*/
 Datum
 json_gin_consistent(PG_FUNCTION_ARGS)
@@ -1094,6 +1064,10 @@ gin_compare_string_partial(char *a, int lena, char *b, int lenb)
 	return cmp;
 }
 
+/*
+ * Compare keys partially
+ * Returns a value that indicates a status of scan (see doc)
+ */
 Datum
 json_gin_compare_partial(PG_FUNCTION_ARGS)
 {
