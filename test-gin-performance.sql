@@ -1,10 +1,3 @@
--- JSON index usage example, see
--- http://people.planetpostgresql.org/andrew/index.php?/archives/249-Using-PLV8-to-index-JSON.html
--- http://sjsnyder.com/using-postgresql-arrays-with-gin-indexes-for
-
--- recreate extension
--- TODO remove if a test
-
 drop extension "postgre-json-functions" cascade;
 create extension "postgre-json-functions";
 
@@ -16,16 +9,10 @@ create table test_table(id bigserial, val text);
 insert into test_table(val) values('{"create_date":"2009-12-01 01:23:45","tags":["foo1","bar1","baz1"]}');
 insert into test_table(val) values('{"create_date":"2009-12-02 01:23:45","tags":["foo2","bar2","baz2"]}');
 insert into test_table(val) values('{"create_date":"2009-12-03 01:23:45","tags":["foo3","bar3","baz3"]}');
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
 --insert into test_table(val) select val from test_table;
 --insert into test_table(val) select val from test_table;
 --insert into test_table(val) select val from test_table;
@@ -94,6 +81,38 @@ create index test_tags_idx on test_table using gin (json_object_get_text_array(v
 -- fast query
 -- explain analyze select * from test_table where json_object_get_text_array(val, 'tags') @> array['bar4'];
 --   expects 3 rows
+
+\echo "Initial"
 explain analyze select * from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
 select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
---   expects 6 rows
+
+\echo "Select using seq scan"
+set enable_indexscan=0;
+set enable_seqscan=1;
+explain analyze select * from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
+select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
+
+\echo "Select using index (GIN) scan"
+set enable_indexscan=1;
+set enable_seqscan=0;
+explain analyze select * from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
+select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
+
+\echo "Let Postgres choose the winner"
+\echo "  but usually it fails..."
+set enable_indexscan=1;
+set enable_seqscan=1;
+explain analyze select * from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
+select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
+
+\echo "Some integrity checks"
+select count(*), 6 		as expected from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
+select count(*), 3 		as expected from test_table where json_object_get_text_array(val, 'tags') @> array['bar4'];
+select count(*), 8192 	as expected from test_table where json_object_get_text_array(val, 'tags') @@> array['bar3'];
+select count(*), 8192 	as expected from test_table where json_object_get_text_array(val, 'tags') @> array['bar3'];
+select count(*), 0 		as expected from test_table where json_object_get_text_array(val, 'tags') @@> array['qux'];
+select count(*), 0 		as expected from test_table where json_object_get_text_array(val, 'tags') @> array['qux'];
+select count(*), 'anything'	as expected from test_table where json_object_get_text_array(val, 'tags') @@> array[]::text[];
+select count(*), 'anything'	as expected from test_table where json_object_get_text_array(val, 'tags') @> array[]::text[];
+select count(*), 24582	as expected from test_table where json_object_get_text_array(val, 'tags') @@> array[''];
+

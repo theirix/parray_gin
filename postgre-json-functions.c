@@ -17,6 +17,7 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
+#include "access/gin.h"
 #include "access/skey.h"
 #include "access/tuptoaster.h"
 #include "utils/fmgroids.h"
@@ -39,7 +40,7 @@ PG_MODULE_MAGIC;
 
 /* log level, usually DEBUG5 (silent) or NOTICE (messages are sent to client side) */
 #define PGJSON_TRACE_LEVEL NOTICE
-#define TRACE_LIKE_HELL 1
+#define TRACE_LIKE_HELL 0
 
 /* 
  * Strategy */
@@ -828,16 +829,17 @@ json_gin_compare(PG_FUNCTION_ARGS)
 	text *key1 = PG_GETARG_TEXT_P(0);
 	text *key2 = PG_GETARG_TEXT_P(1);
 
-	char *pstr1, *pstr2;
-
 	int32 result = DatumGetInt32(DirectFunctionCall2Coll(bttextcmp, DEFAULT_COLLATION_OID, PointerGetDatum(key1), PointerGetDatum(key2)));
 
 #if TRACE_LIKE_HELL
+	{
+	char *pstr1, *pstr2;
 	pstr1 = text_to_cstring(key1);
 	pstr2 = text_to_cstring(key2);
 	elog(PGJSON_TRACE_LEVEL, "GIN compare: %s vs %s -> %d", pstr1, pstr2, result);
 	pfree(pstr1);
 	pfree(pstr2);
+	}
 #endif
 
 	PG_RETURN_INT32(result);
@@ -853,10 +855,6 @@ json_gin_extract_value(PG_FUNCTION_ARGS)
 
 	Datum *keys;
 
-	text *tstr;
-	char *pstr;
-	int i;
-
 	int16 elmlen;
 	bool elmbyval;
 	char elmalign;
@@ -870,22 +868,24 @@ json_gin_extract_value(PG_FUNCTION_ARGS)
 			&keys, nullFlags, &nelems);
 
 	*nkeys = nelems;
-
-/*	keys = DatumGetArrayTypeP(json_array_to_array_generic(itemValue, cJSON_String, TEXTOID, extract_json_string));
-	if (keys)
-		*nkeys = ARR_DIMS(keys)[0];
-	else
-		*nkeys = 0;*/
 	
 #if TRACE_LIKE_HELL
+	{
+	text *tstr;
+	char *pstr;
+	int i;
+
 	tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(itemValue), CStringGetTextDatum("#")));
 	pstr = text_to_cstring(tstr);
 	elog(PGJSON_TRACE_LEVEL, "GIN extract_value: %d items, %s", *nkeys, pstr);
+	pfree(pstr);
 	for (i = 0; i < *nkeys; ++i)
 	{
-		elog(PGJSON_TRACE_LEVEL, "  extract_value item %d = %s", i, text_to_cstring(DatumGetTextP(keys[i])));
+		pstr = text_to_cstring(DatumGetTextP(keys[i]));
+		elog(PGJSON_TRACE_LEVEL, "  extract_value item %d = %s", i, pstr);
+		pfree(pstr);
 	}
-	pfree(pstr);
+	}
 #endif
 
 	PG_RETURN_POINTER(keys);
@@ -900,9 +900,7 @@ json_gin_extract_query(PG_FUNCTION_ARGS)
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
 	bool **pmatch = (bool**)PG_GETARG_POINTER(3);
 	bool **nullFlags = (bool**)PG_GETARG_POINTER(5);
-	
-	char *pstr;
-	text *tstr;
+	int32 *searchMode = (int32*)PG_GETARG_POINTER(6);
 
 	ArrayType *queryArray;
 	Datum *keys;
@@ -930,6 +928,10 @@ json_gin_extract_query(PG_FUNCTION_ARGS)
 
 	*nkeys = nelems;
 
+	/* don't bother about empty queries
+	 * but be careful - it will lead to an undefined result
+	 * searchMode = GIN_SEARCH_MODE_ALL;*/
+
 	if (strategy == PGJSON_STRATEGY_CONTAINS)
 	{
 		*pmatch = NULL;
@@ -944,15 +946,22 @@ json_gin_extract_query(PG_FUNCTION_ARGS)
 	}
 
 #if TRACE_LIKE_HELL
+	{
+	char *pstr;
+	text *tstr;
+
 	tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(queryArray), CStringGetTextDatum("#")));
 	pstr = text_to_cstring(tstr);
 	elog(PGJSON_TRACE_LEVEL, "GIN extract_query: json=%s strategy=%d -> %d items", 
 			pstr, (int)strategy, (int)*nkeys);
+	pfree(pstr);
 	for (i = 0; i < *nkeys; ++i)
 	{
-		elog(PGJSON_TRACE_LEVEL, "  extract_query item %d = %s", i, text_to_cstring(DatumGetTextP(keys[i])));
+		pstr = text_to_cstring(DatumGetTextP(keys[i]));
+		elog(PGJSON_TRACE_LEVEL, "  extract_query item %d = %s", i, pstr);
+		pfree(pstr);
 	}
-	pfree(pstr);
+	}
 #endif
 	
 	PG_RETURN_POINTER(keys);
@@ -988,7 +997,7 @@ json_gin_consistent(PG_FUNCTION_ARGS)
 
 #if TRACE_LIKE_HELL
 	elog(PGJSON_TRACE_LEVEL, "GIN consistent: %d keys, strategy=%d -> %s", 
-			(int)nkeys, (int)strategy, result?"true":"false");
+			nkeys, (int)strategy, result?"true":"false");
 #endif
 
 	PG_RETURN_BOOL(result);
@@ -1013,20 +1022,18 @@ text_equal_partial(PG_FUNCTION_ARGS)
 	targ1 = DatumGetTextPP(arg1);
 	targ2 = DatumGetTextPP(arg2);
 
-	/*if (len1 == 0)
-	{
-		result = true;
-	}
-	else if (len2 == 0)
-	{
-		result = false;
-	}
-	else
-	{
-		cmp = memcmp(VARDATA_ANY(targ1), VARDATA_ANY(targ2), Min(len1,len2));
-		result = cmp == 0 && len2 > len1;
-	}*/
 	result = gin_compare_string_partial(VARDATA_ANY(targ1), len1 - VARHDRSZ, VARDATA_ANY(targ2), len2 - VARHDRSZ) == 0;
+
+#if TRACE_LIKE_HELL
+	{
+	char *pstr1, *pstr2;
+	pstr1 = text_to_cstring(targ1);
+	pstr2 = text_to_cstring(targ2);
+	elog(PGJSON_TRACE_LEVEL, "text_equal_partial: %s vs %s -> %d", pstr1, pstr2, result);
+	pfree(pstr1);
+	pfree(pstr2);
+	}
+#endif
 
 	PG_FREE_IF_COPY(targ1, 0);
 	PG_FREE_IF_COPY(targ2, 1);
