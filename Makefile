@@ -1,11 +1,8 @@
-MODULE_big = postgre-json-functions
-OBJS = postgre-json-functions.o cJSON.o
+MODULE_big = json_accessors
+OBJS = json_accessors.o cJSON.o
 
-EXTENSION = postgre-json-functions
-DATA = postgre-json-functions--1.0.sql 
-
-REGRESS = postgre-json-functions postgre-json-gin
-REGRESS_OPTS = --user postgres
+EXTENSION = json_accessors_c
+DATA = json_accessors_c--1.2.sql
 
 PG_CPPFLAGS = -g -O0
 

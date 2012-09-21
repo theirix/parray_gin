@@ -1,5 +1,0 @@
-# postgre-json-functions extension
-comment = 'postgre json utils'
-default_version = '1.0'
-module_pathname = '$libdir/postgre-json-functions'
-relocatable = true
