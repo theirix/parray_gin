@@ -12,24 +12,13 @@
  *-------------------------------------------------------------------------
  */
 
-// todo[alexey]: remove GIN headers
 #include "postgres.h"
-#include "fmgr.h"
-#include "catalog/pg_collation.h"
-#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
-#include "access/gin.h"
-#include "access/skey.h"
-#include "access/tuptoaster.h"
-#include "utils/fmgroids.h"
 #include "utils/builtins.h"
-#include "utils/numeric.h"
-#include "utils/int8.h"
 #include "utils/timestamp.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 #include "utils/formatting.h"
-#include "utils/fmgroids.h"
 
 /*
  * Note. cJSON should be patched for this extension.
@@ -298,16 +287,16 @@ Datum json_array_to_array_generic_impl(cJSON *jsonArray, int json_type, Oid elem
 
 	for (elem = jsonArray->child; elem; elem = elem->next)
 	{
-//	    todo [alexey]: check this change
-//		if (elem->child)
-//			ereport(ERROR,
-//					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-//					 errmsg("no childs allowed")));
-//		if (!(json_type == CJSON_TYPE_ANY || match_json_types(json_type, elem->type)))
-//			ereport(ERROR,
-//					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-//					 errmsg("expected value of type %s, actual %s at %d position",
-//						 json_type_str(json_type), json_type_str(elem->type), ind)));
+	    /*todo [alexey]: check this change*/
+		if (elem->child)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("no childs allowed")));
+		if (!(json_type == CJSON_TYPE_ANY || match_json_types(json_type, elem->type)))
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("expected value of type %s, actual %s at %d position",
+						 json_type_str(json_type), json_type_str(elem->type), ind)));
 		++count;
 	}
 
