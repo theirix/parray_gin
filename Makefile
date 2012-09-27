@@ -5,7 +5,7 @@ EXTENSION = json_accessors_c
 DATA = json_accessors_c--1.2.sql
 
 PG_CPPFLAGS = 
-REGRESS = postgre-json-functions
+REGRESS = json_accessors_c
 
 PG_CONFIG := pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
