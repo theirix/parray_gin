@@ -11,7 +11,7 @@ Extension is compatible witgh PostgreSQL 9.1 and 9.2.
 Description
 -----------
 
-[PostgreSQL](http://www.postgresql.org/) native extension provided GIN index support for arrays with partial match.
+[PostgreSQL](http://www.postgresql.org/) native extension providing GIN index support for arrays with partial match.
 
 Usage
 -----
