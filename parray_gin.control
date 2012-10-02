@@ -1,0 +1,5 @@
+# parray_gin extension
+comment = 'postgre partial array gin support'
+default_version = '1.1'
+module_pathname = '$libdir/parray_gin'
+relocatable = true

@@ -1,14 +1,21 @@
-MODULE_big = postgre-json-functions
-OBJS = postgre-json-functions.o cJSON.o
+EXTENSION    = parray_gin
+EXTVERSION   = $(shell grep default_version $(EXTENSION).control | \
+               sed -e "s/default_version[[:space:]]*=[[:space:]]*'\([^']*\)'/\1/")
+MODULE_big   = parray_gin
+OBJS         = $(patsubst %.c,%.o,$(wildcard src/*.c))
+DATA         = $(wildcard sql/*--*.sql) sql/$(EXTENSION)--$(EXTVERSION).sql
+DOCS         = $(wildcard doc/*.md)
+TESTS        = $(wildcard test/sql/*.sql)
+REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
+REGRESS_OPTS = --inputdir=test
+PG_CONFIG    := pg_config
+#PG_CPPFLAGS  = 
+EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql
 
-EXTENSION = postgre-json-functions
-DATA = postgre-json-functions--1.0.sql 
+all: sql/$(EXTENSION)--$(EXTVERSION).sql
 
-REGRESS = postgre-json-functions postgre-json-gin
-REGRESS_OPTS = --user postgres
+sql/$(EXTENSION)--$(EXTVERSION).sql: sql/$(EXTENSION).sql
+	cp $< $@
 
-PG_CPPFLAGS = -g -O0
-
-PG_CONFIG := pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)

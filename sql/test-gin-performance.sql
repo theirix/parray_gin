@@ -1,5 +1,5 @@
-drop extension "postgre-json-functions" cascade;
-create extension "postgre-json-functions";
+drop extension "parray_gin" cascade;
+create extension "parray_gin";
 
 -- create table
 drop table if exists test_table;
