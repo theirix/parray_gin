@@ -5,6 +5,25 @@
 
 -- must be run as a normal user
 
+-- GIN support
+
+create or replace function parray_gin_compare(internal, internal) returns internal
+ as 'MODULE_PATHNAME' language C immutable strict;
+
+create or replace function parray_gin_extract_value(internal, internal, internal) returns internal
+ as 'MODULE_PATHNAME' language C immutable strict;
+
+create or replace function parray_gin_extract_query(internal, internal, internal, internal, internal, internal, internal) returns internal
+ as 'MODULE_PATHNAME' language C immutable strict;
+
+create or replace function parray_gin_consistent(internal, internal, internal, internal, internal, internal, internal, internal) returns internal
+ as 'MODULE_PATHNAME' language C immutable strict;
+
+create or replace function parray_gin_compare_partial(internal, internal, internal, internal) returns internal
+ as 'MODULE_PATHNAME' language C immutable strict;
+
+
+
 -- GIN operator class
 
 -- partial operators <@@ and @@>

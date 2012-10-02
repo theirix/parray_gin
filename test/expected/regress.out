@@ -1,6 +1,6 @@
 set client_min_messages to 'error';
-drop extension if exists "gin_array" cascade;
-create extension "gin_array";
+drop extension if exists "parray_gin" cascade;
+create extension "parray_gin";
 set client_min_messages to 'notice';
 \t on
 \pset format unaligned
@@ -66,49 +66,49 @@ select array['foo', 'foobar', 'baz'] @@> array['foo'];
 t
 set client_min_messages to 'error';
 drop table if exists test_table;
-create table test_table(id bigserial, val text);
+create table test_table(id bigserial, val text[]);
 set client_min_messages to 'notice';
-insert into test_table(val) values('{"create_date":"2009-12-01 01:23:45","tags":["foo1","bar1","baz1"]}');
-insert into test_table(val) values('{"create_date":"2009-12-02 01:23:45","tags":["foo2","bar2","baz2"]}');
-insert into test_table(val) values('{"create_date":"2009-12-03 01:23:45","tags":["foo3","bar3","baz3"]}');
+insert into test_table(val) values(array['foo1','bar1','baz1']);
+insert into test_table(val) values(array['foo2','bar2','baz2']);
+insert into test_table(val) values(array['foo3','bar3','baz3']);
 insert into test_table(val) select val from test_table;
 insert into test_table(val) select val from test_table;
 insert into test_table(val) select val from test_table;
-insert into test_table(val) values('{"create_date":"2009-12-04 01:23:45","tags":["foo4","bar4","baz4"]}');
-insert into test_table(val) values('{"create_date":"2009-12-04 01:23:45","tags":["foo4","bar4","baz4"]}');
-insert into test_table(val) values('{"create_date":"2009-12-04 01:23:45","tags":["foo4","bar4","baz4"]}');
-insert into test_table(val) values('{"create_date":"2009-12-04 01:23:45","tags":["foo4","bar4one","baz4"]}');
-insert into test_table(val) values('{"create_date":"2009-12-04 01:23:45","tags":["foo4","bar4two","baz4"]}');
-insert into test_table(val) values('{"create_date":"2009-12-04 01:23:45","tags":["foo4","bar4three","baz4"]}');
+insert into test_table(val) values(array['foo4','bar4','baz4']);
+insert into test_table(val) values(array['foo4','bar4','baz4']);
+insert into test_table(val) values(array['foo4','bar4','baz4']);
+insert into test_table(val) values(array['foo4','bar4one','baz4']);
+insert into test_table(val) values(array['foo4','bar4two','baz4']);
+insert into test_table(val) values(array['foo4','bar4three','baz4']);
 -- 30
 select count(*) from test_table;
 30
--- NOTICE:  index "test_tags_idx" does not exist, skipping
-drop index if exists test_tags_idx;
-NOTICE:  index "test_tags_idx" does not exist, skipping
-create index test_tags_idx on test_table using gin (json_object_get_text_array(val, 'tags') json_gin_ops);
+-- NOTICE:  index "test_val_idx" does not exist, skipping
+drop index if exists test_val_idx;
+NOTICE:  index "test_val_idx" does not exist, skipping
+create index test_val_idx on test_table using gin (val parray_gin_ops);
 -- 6
-select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array['bar4'];
+select count(*) from test_table where val @@> array['bar4'];
 6
 -- 3
-select count(*) from test_table where json_object_get_text_array(val, 'tags') @> array['bar4'];
+select count(*) from test_table where val @> array['bar4'];
 3
 -- 8
-select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array['bar3'];
+select count(*) from test_table where val @@> array['bar3'];
 8
 -- 8
-select count(*) from test_table where json_object_get_text_array(val, 'tags') @> array['bar3'];
+select count(*) from test_table where val @> array['bar3'];
 8
 -- 0
-select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array['qux'];
+select count(*) from test_table where val @@> array['qux'];
 0
 -- 0
-select count(*) from test_table where json_object_get_text_array(val, 'tags') @> array['qux'];
+select count(*) from test_table where val @> array['qux'];
 0
------ select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array[]::text[];
------ select count(*) from test_table where json_object_get_text_array(val, 'tags') @> array[]::text[];
+----- select count(*) from test_table where val @@> array[]::text[];
+----- select count(*) from test_table where val @> array[]::text[];
 -- 30
-select count(*) from test_table where json_object_get_text_array(val, 'tags') @@> array[''];
+select count(*) from test_table where val @@> array[''];
 30
 \t off
 \pset format aligned
