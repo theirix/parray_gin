@@ -49,6 +49,13 @@ select array['foo', 'bar', 'baz'] @@> array['baq'];
 -- t
 select array['foo', 'foobar', 'baz'] @@> array['foo'];
 
+-- t
+select array['foo', 'boo', 'baz'] @@> array['oo'];
+-- f
+select array['foo', 'boo', 'baz'] @@> array['ooz'];
+-- t
+select array['food', 'booze', 'baz'] @@> array['ooz'];
+
 set client_min_messages to 'error';
 drop table if exists test_table;
 create table test_table(id bigserial, val text[]);

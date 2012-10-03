@@ -80,6 +80,7 @@ PG_FUNCTION_INFO_V1(parray_op_text_array_contains_partial);
 PG_FUNCTION_INFO_V1(parray_op_text_array_contained_partial);
 PG_FUNCTION_INFO_V1(text_equal_partial);
 
+
 /**
  *
  * Operator support
@@ -496,11 +497,44 @@ text_equal_partial(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(result);
 }
 
+
+/*
+ * memmem ported from FreeBSD 9
+ * Find the first occurrence of the byte string s in byte string l.
+ */
+void *
+memmem_ported(const void *l, size_t l_len, const void *s, size_t s_len)
+{
+	register char *cur, *last;
+	const char *cl = (const char *)l;
+	const char *cs = (const char *)s;
+
+	/* we need something to compare */
+	if (l_len == 0 || s_len == 0)
+		return NULL;
+
+	/* "s" must be smaller or equal to "l" */
+	if (l_len < s_len)
+		return NULL;
+
+	/* special case where s_len == 1 */
+	if (s_len == 1)
+		return memchr(l, (int)*cs, l_len);
+
+	/* the last position where its possible to find "s" in "l" */
+	last = (char *)cl + l_len - s_len;
+
+	for (cur = (char *)cl; cur <= last; cur++)
+		if (cur[0] == cs[0] && memcmp(cur, cs, s_len) == 0)
+			return cur;
+
+	return NULL;
+}
+
 /*
  * Derived from tsearch2's tsCompareString
  * Compare two strings by tsvector rules.
  * returns zero value iff b has partial a (b is larger)
- * TODO XXX currently it's only a prefix search *
  */
 int
 gin_compare_string_partial(char *a, int lena, char *b, int lenb)
@@ -508,15 +542,11 @@ gin_compare_string_partial(char *a, int lena, char *b, int lenb)
 	int cmp;
 
 	if (lena == 0)
-		cmp = 0;            /* empty string is prefix of anything */
+		cmp = 0;            /* empty string is substring of anything */
 	else if (lenb == 0)
 		cmp = 1;
 	else
-	{
-		cmp = memcmp(a, b, Min(lena, lenb));
-		if (cmp == 0 && lena > lenb)
-			cmp = 1;        /* a is longer, so not a prefix of b */
-	}
+		cmp = memmem_ported(b, lenb, a, lena) ? 0 : 1;
 
 	return cmp;
 }

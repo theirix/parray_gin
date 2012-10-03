@@ -64,6 +64,15 @@ f
 -- t
 select array['foo', 'foobar', 'baz'] @@> array['foo'];
 t
+-- t
+select array['foo', 'boo', 'baz'] @@> array['oo'];
+t
+-- f
+select array['foo', 'boo', 'baz'] @@> array['ooz'];
+f
+-- t
+select array['food', 'booze', 'baz'] @@> array['ooz'];
+t
 set client_min_messages to 'error';
 drop table if exists test_table;
 create table test_table(id bigserial, val text[]);
