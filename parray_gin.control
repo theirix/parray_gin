@@ -1,5 +1,5 @@
 # parray_gin extension
 comment = 'PostgreSQL GIN support for arrays with partial match'
-default_version = '1.1.0'
+default_version = '1.1.1'
 module_pathname = '$libdir/parray_gin'
 relocatable = true

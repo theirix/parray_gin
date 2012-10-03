@@ -6,7 +6,9 @@ Extension `parray_gin` provides GIN index and operator support for arrays with p
 Usage
 -----
 
-Please consult with [doc/parray_gin.md](doc/parray_gin.md) for a function reference.
+Please consult with doc/parray_gin.md for a function and operator reference.
+
+On PGXN please click on extension from _Extensions_ section to view reference.
 
 
 Installing extension
@@ -60,7 +62,7 @@ Copy control file to the extension directory:
 
 Copy SQL prototypes file to the extension directory:
     
-    cp parray_gin--1.3.sql `<postgresql_install_dir>/bin/pg_config --sharedir`/extension
+    cp parray_gin--<version>.sql `<postgresql_install_dir>/bin/pg_config --sharedir`/extension
 
 Create an extension by running:
 
@@ -80,4 +82,5 @@ License information
 -------------------
 
 You can use any code from this project under the terms of [PostgreSQL License](http://www.postgresql.org/about/licence/).
+
 Please consult with the COPYING for license information.

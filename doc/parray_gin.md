@@ -1,5 +1,5 @@
-parray_gin
-==========
+parray_gin extension
+====================
 
 Installing
 ----------
@@ -27,46 +27,48 @@ Index can be created for the table with the following commands:
         -- select using index
         select * from test_table where val @> array['must','contain'];
 
-GIN index can be used with three following operators
+GIN index can be used with three operators: `@>`, `<@@`, `@@>`.
 
-1. Strict match _contains_ `@>` operator:
-
-        -- must contain all items from right side, partial matched
-        select * from test_table where val @@> array['contain'];
-
-
-2. Partial match _contains_ `@@>` operator:
-
-        -- must contain all items from right side, partial matched
-        select * from test_table where val @@> array['cont'];
-
-
-3. Partial match _contained by_ `<@@` operator:
-
-        -- must be contained by all items from the right side, partial matched
-        select * from test_table where val @@> array['must','contains','or','not'];
-
-
+Developers of an extension succesfully used GIN index on JSON arrays extracted from JSON text fields using `json_accessors` extension.
 
 Interface
 ---------
 
-### Operator `@> (anyarray, anyarray) -> bool`
+### Operators
 
-Strict array match. Returns true if LHS array contains all items from the RHS array.
+#### `@> (anyarray, anyarray) -> bool`
 
-### Operator `@@> (text[], text[]) -> bool`
+Strict array _contains_. Returns true if LHS array contains all items from the RHS array.
 
-Partial array match. Returns true if LHS array contains all items from the RHS array,
+Sample index search:
+        
+        -- must contain all items from right side, partial matched
+        select * from test_table where val @@> array['contain'];
+
+#### `@@> (text[], text[]) -> bool`
+
+Partial array _contains_. Returns true if LHS array contains all items from the RHS array,
 matched partially (i.e. _foobar_ contains _oobar_).
 
-### Operator `<@@ (text[], text[]) -> bool`
+Sample index search:
+        
+        -- must contain all items from right side, partial matched
+        select * from test_table where val @@> array['cont'];
 
-Partial array match. Returns true if LHS array is contained by all items from the RHS array, matched partially (i.e. _foobar_ contains _oobar_). Inversion of the `@@>`
+#### `<@@ (text[], text[]) -> bool`
 
-### Operator class `parray_gin_ops`
+Partial array _contained by_. Returns true if LHS array is contained by all items from the RHS array, matched partially (i.e. _foobar_ contains _oobar_). Inversion of the `@@>`.
 
-GIN-capable operator class. Support indexing based on theses operators.
+Sample index search:
+        
+        -- must be contained by all items from the right side, partial matched
+        select * from test_table where val @@> array['must','contains','or','not'];
+
+### Operator class 
+
+#### `operator class parray_gin_ops`
+
+GIN-capable operator class. Support indexing strategies based on these operators.
 
 Author
 ------
@@ -78,4 +80,6 @@ Developed by [Eugene Seliverstov](theirix@concerteza.ru)
 Copyright and License
 ---------------------
 
-You can use any code from this project under the terms of [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0).
+You can use any code from this project under the terms of [PostgreSQL License](http://www.postgresql.org/about/licence/).
+
+Please consult with the COPYING for license information.
