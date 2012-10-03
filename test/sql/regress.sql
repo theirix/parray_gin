@@ -56,6 +56,28 @@ select array['foo', 'boo', 'baz'] @@> array['ooz'];
 -- t
 select array['food', 'booze', 'baz'] @@> array['ooz'];
 
+
+-- t
+select array['fo'] <@@ array['foo', 'bar', 'baz'];
+-- t
+select array['ba'] <@@ array['foo', 'bar', 'baz'];
+-- t
+select array['b'] <@@ array['foo', 'bar', 'baz'];
+-- t
+select array[''] <@@ array['foo', 'bar', 'baz'];
+-- f
+select array['baq'] <@@ array['foo', 'bar', 'baz'];
+-- t
+select array['foo'] <@@ array['foo', 'foobar', 'baz'];
+
+-- t
+select array['oo'] <@@ array['foo', 'boo', 'baz'];
+-- f
+select array['ooz'] <@@ array['foo', 'boo', 'baz'];
+-- t
+select array['ooz'] <@@ array['food', 'booze', 'baz'];
+
+
 set client_min_messages to 'error';
 drop table if exists test_table;
 create table test_table(id bigserial, val text[]);
