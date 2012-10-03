@@ -1,9 +1,7 @@
-PostgreSQL GIN support for arrays with partial match
-====================================================
+GIN partial array match for PostgreSQL
+======================================
 
-[PostgreSQL](http://www.postgresql.org/) native extension providing GIN index support for arrays with partial match.
-
-This project contains PostgreSQL [extension](http://www.postgresql.org/docs/9.1/static/extend-extensions.html) `parray_gin` with stored functions. Extension is native and writen in C.
+Extension `parray_gin` provides GIN index and operator support for arrays with partial match.
 
 Usage
 -----
@@ -81,4 +79,5 @@ To uninstall extension just remove files you copied before.
 License information
 -------------------
 
-You can use any code from this project under the terms of [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0).
+You can use any code from this project under the terms of [PostgreSQL License](http://www.postgresql.org/about/licence/).
+Please consult with the COPYING for license information.

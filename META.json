@@ -1,0 +1,48 @@
+{
+  "name": "parray_gin",
+  "abstract": "GIN partial array match",
+  "description": "Extension parray_gin provides GIN index and operator support for arrays with partial match.",
+  "version": "1.1.0",
+  "maintainer": [
+    "Eugene Seliverstov <theirix@gmail.com>"
+  ],
+  "license": "postgresql",
+  "provides": {
+    "parray_gin": {
+      "file": "sql/parray_gin.sql",
+      "docfile": "doc/parray_gin.md",
+      "version": "1.1.0"
+    }
+  },
+  "prereqs": {
+    "runtime": {
+      "requires": {
+        "PostgreSQL": "9.1.0"
+      }
+    },
+    "test": {
+      "requires": {
+        "plpgsql": 0
+      }
+    }
+  },
+  "resources": {
+    "bugtracker": {
+      "web": "http://github.com/theirix/parray_gin/issues/"
+    },
+    "repository": {
+      "url": "git://github.com/theirix/parray_gin.git",
+      "web": "http://github.com/theirix/parray_gin/",
+      "type": "git"
+    }
+  },
+  "generated_by": "Eugene Seliverstov",
+  "meta-spec": {
+    "version": "1.0.0",
+    "url": "http://pgxn.org/meta/spec.txt"
+  },
+  "tags": [
+    "gin",
+    "index"
+  ]
+}

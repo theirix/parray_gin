@@ -1,17 +1,17 @@
 parray_gin
-==============
+==========
 
 Installing
 ----------
 
     CREATE EXTENSION parray_gin;
 
-Extension is compatible witgh PostgreSQL 9.1 and 9.2.
+Extension is compatible witgh PostgreSQL 9.1.
 
 Description
 -----------
 
-[PostgreSQL](http://www.postgresql.org/) native extension providing GIN index support for arrays with partial match.
+Extension `parray_gin` provides GIN index and operator support for arrays with partial match.
 
 Usage
 -----
