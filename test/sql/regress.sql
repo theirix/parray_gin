@@ -51,6 +51,8 @@ select array['foo', 'foobar', 'baz'] @@> array['foo'];
 
 -- t
 select array['foo', 'boo', 'baz'] @@> array['oo'];
+-- t
+select array['foo', 'boo', 'baz'] @@> array['ba', 'fo'];
 -- f
 select array['foo', 'boo', 'baz'] @@> array['ooz'];
 -- t
@@ -59,6 +61,8 @@ select array['food', 'booze', 'baz'] @@> array['ooz'];
 
 -- t
 select array['fo'] <@@ array['foo', 'bar', 'baz'];
+-- t
+select array['ba', 'fo'] <@@ array['foo', 'bar', 'baz'];
 -- t
 select array['ba'] <@@ array['foo', 'bar', 'baz'];
 -- t
@@ -119,6 +123,11 @@ select count(*) from test_table where val @> array['qux'];
 ----- select count(*) from test_table where val @> array[]::text[];
 -- 30
 select count(*) from test_table where val @@> array[''];
+
+-- 3
+select count(*) from test_table where val <@@ array['kung-foo4','xxxbar4','xxxbaz4'];
+-- 0
+select count(*) from test_table where val <@@ array['kung-foo4'];
 
 \t off
 \pset format aligned

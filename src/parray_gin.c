@@ -30,7 +30,7 @@
 PG_MODULE_MAGIC;
 
 /* Log level, usually DEBUG5 (silent) or NOTICE (messages are sent to client side) */
-#define PARRAY_GIN_TRACE_LEVEL NOTICE
+#define PARRAY_GIN_TRACE_LEVEL DEBUG5
 
 /* Controls logging from GIN functions. A lot of output */
 #define TRACE_LIKE_HELL 0
@@ -41,14 +41,15 @@ PG_MODULE_MAGIC;
 #define PARRAY_GIN_STRATEGY_CONTAINS 7
 /* @@> operator strategy */
 #define PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL 8
-/* <@@ operator strategy 
-#define PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL 9 */
+/* <@@ operator strategy */
+#define PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL 9
 
 /*
  * Internal functions declarations
  */
 
 int32 gin_compare_string_partial(char *a, int lena, char *b, int lenb);
+void* memmem_ported(const void *l, size_t l_len, const void *s, size_t s_len);
 
 
 /*
@@ -364,7 +365,8 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 	int nelems;
 
 	if (strategy != PARRAY_GIN_STRATEGY_CONTAINS &&
-			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL)
+			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL &&
+			strategy != PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
@@ -388,12 +390,13 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 	{
 		*pmatch = NULL;
 	}
-	else if (strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL)
+	else if (strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL || 
+			 strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
 	{
 		*pmatch = (bool*)palloc(sizeof(bool) * *nkeys);
 		for (i = 0; i < *nkeys; ++i)
 		{
-			*pmatch[i] = TRUE;
+			(*pmatch)[i] = TRUE;
 		}
 	}
 
@@ -438,7 +441,8 @@ parray_gin_consistent(PG_FUNCTION_ARGS)
 	int i;
 
 	if (strategy != PARRAY_GIN_STRATEGY_CONTAINS && 
-			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL)
+			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL &&
+			strategy != PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
@@ -567,7 +571,8 @@ parray_gin_compare_partial(PG_FUNCTION_ARGS)
 	int result;
 
 	if (strategy != PARRAY_GIN_STRATEGY_CONTAINS &&
-			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL)
+			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL &&
+			strategy != PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
@@ -582,7 +587,8 @@ parray_gin_compare_partial(PG_FUNCTION_ARGS)
 		else
 			result = 0;
 	}
-	else if (strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL)
+	else if (strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL ||
+			 strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
 	{
 		result = gin_compare_string_partial(str_partial_key, strlen(str_partial_key), str_key, strlen(str_key));
 	}
