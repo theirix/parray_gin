@@ -301,7 +301,7 @@ parray_gin_extract_value(PG_FUNCTION_ARGS)
 {
 	ArrayType *itemValue = PG_GETARG_ARRAYTYPE_P_COPY(0);
 	int32 *nkeys = (int32*)PG_GETARG_POINTER(1);
-	bool **nullFlags = (bool**)PG_GETARG_POINTER(3);
+	bool **nullFlags = (bool**)PG_GETARG_POINTER(2);
 
 	Datum *keys;
 

@@ -5,7 +5,7 @@ create extension "parray_gin";
 drop table if exists test_table;
 create table test_table(id bigserial, val text[]);
 
--- insert data (1572867 rows)
+-- insert data (1572867 rows) -> 24582 rows
 insert into test_table(val) values(array['foo1','bar1','baz1']);
 insert into test_table(val) values(array['foo2','bar2','baz2']);
 insert into test_table(val) values(array['foo3','bar3','baz3']);
@@ -13,15 +13,15 @@ insert into test_table(val) select val from test_table;
 insert into test_table(val) select val from test_table;
 insert into test_table(val) select val from test_table;
 insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
---insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
+insert into test_table(val) select val from test_table;
 insert into test_table(val) values(array['foo4','bar4','baz4']);
 insert into test_table(val) values(array['foo4','bar4','baz4']);
 insert into test_table(val) values(array['foo4','bar4','baz4']);
@@ -31,7 +31,7 @@ insert into test_table(val) values(array['foo4','bar4two','baz4']);
 insert into test_table(val) values(array['foo4','bar4three','baz4']);
 
 
-select count(*) from test_table;
+select count(*), 24582 as expected from test_table;
 
 -- JSON object fields query
 
@@ -116,3 +116,19 @@ select count(*), 'anything'	as expected from test_table where val @@> array[]::t
 select count(*), 'anything'	as expected from test_table where val @> array[]::text[];
 select count(*), 24582	as expected from test_table where val @@> array[''];
 
+\echo "Test insert to already indexed table"
+
+insert into test_table(val) values(array['foo4','bar4','baz4']);
+insert into test_table(val) values(array['foo4','bar4','baz4']);
+insert into test_table(val) values(array['foo4','bar4','baz4']);
+
+insert into test_table(val) values(array['1','2','3']);
+
+insert into test_table(val) values(array['foo4','bar4one','baz4']);
+insert into test_table(val) values(array['foo4','bar4two','baz4']);
+insert into test_table(val) values(array['foo4','bar4three','baz4']);
+
+insert into test_table(val) values(array['1','2','3']);
+insert into test_table(val) values(array['1','2','333']);
+
+select count(*), (24582+9) as expected from test_table;
