@@ -3,6 +3,8 @@ GIN partial array match for PostgreSQL
 
 Extension `parray_gin` provides GIN index and operator support for arrays with partial match.
 
+Extension supports PostgreSQL 9.1 and 9.2.
+
 Usage
 -----
 
@@ -10,11 +12,25 @@ Please consult with doc/parray_gin.md for a function and operator reference.
 
 On PGXN please click on extension from _Extensions_ section to view reference.
 
-
 Installing extension
 --------------------
 
-### Building and installing extension with PGXS
+To use an extension one must be built, installed into PostgreSQL directory
+and registered in a database.
+
+### Building extension
+
+#### Using PGXN network
+
+The easisest method to get and install an extension from PGXN network.
+PGXN client downloads and builds the extension.
+
+    pgxn --pg_config <postgresql_install_dir>/bin/pg_config install parray_gin
+
+PGXN client itself is available at [github](https://github.com/dvarrazzo/pgxnclient) and
+can be installed with your favourite method, i.e. `easy_install pgxnclient`.
+
+#### Using PGXS makefiles
 
 C extension are best built and installed using [PGXS](http://www.postgresql.org/docs/9.1/static/extend-pgxs.html).
 PGXS ensures that make is performed with needed compiler and flags. You only need GNU make and a compiler to build
@@ -28,13 +44,7 @@ Installation (as superuser):
 
     gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config install
 
-PostgreSQL server must be restarted and extension created in particular database as superuser:
-
-    create extension parray_gin
-
-To drop all functions use:
-
-    drop extension parray_gin cascade
+PostgreSQL server must be restarted. 
 
 To uninstall extension completely you may use this command (as superuser):
 
@@ -46,8 +56,7 @@ appropriated permissions - create database, for example):
 
     gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config PGUSER=postgres installcheck
 
-
-### Installing manually
+#### Manually
 
 Use this method if you have a precompiled extension and do not want to install this with help of PGXS.
 Or maybe you just do not have GNU make on a production server.
@@ -64,18 +73,23 @@ Copy SQL prototypes file to the extension directory:
     
     cp parray_gin--<version>.sql `<postgresql_install_dir>/bin/pg_config --sharedir`/extension
 
-Create an extension by running:
-
-    create extension parray_gin
-
-It creates all the functions and operators. Note that you must restart a server if a previous library was
-already installed at the same place.
-
-To drop all functions use:
-
-    drop extension parray_gin cascade
-
 To uninstall extension just remove files you copied before.
+
+### Creating extension in a database
+
+Extension must be previously installed to a PostgreSQL directory.
+
+Extension is created in a particular database (as superuser):
+
+    create extension parray_gin;
+
+It creates all the functions, operators and other stuff from extension.
+Note that you must restart a server if a previous library was already installed
+at the same place. In other words, always restart to be sure. 
+
+To drop an extension use:
+
+    drop extension parray_gin cascade;
 
 
 License information
