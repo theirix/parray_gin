@@ -390,8 +390,7 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 	{
 		*pmatch = NULL;
 	}
-	else if (strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL || 
-			 strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
+	else
 	{
 		*pmatch = (bool*)palloc(sizeof(bool) * *nkeys);
 		for (i = 0; i < *nkeys; ++i)
@@ -587,8 +586,7 @@ parray_gin_compare_partial(PG_FUNCTION_ARGS)
 		else
 			result = 0;
 	}
-	else if (strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL ||
-			 strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
+	else 
 	{
 		result = gin_compare_string_partial(str_partial_key, strlen(str_partial_key), str_key, strlen(str_key));
 	}

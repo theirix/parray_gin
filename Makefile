@@ -1,6 +1,5 @@
 EXTENSION    = parray_gin
-EXTVERSION   = $(shell grep default_version $(EXTENSION).control | \
-               sed -e "s/default_version[[:space:]]*=[[:space:]]*'\([^']*\)'/\1/")
+EXTVERSION   = 1.1.2
 MODULE_big   = parray_gin
 OBJS         = $(patsubst %.c,%.o,$(wildcard src/*.c))
 DATA         = $(wildcard sql/*--*.sql) sql/$(EXTENSION)--$(EXTVERSION).sql
@@ -9,7 +8,7 @@ TESTS        = $(wildcard test/sql/*.sql)
 REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
 REGRESS_OPTS = --inputdir=test
 PG_CONFIG    := pg_config
-PG_CPPFLAGS  = -g -O0
+#PG_CPPFLAGS  = -g -O0
 EXTRA_CLEAN  = sql/$(EXTENSION)--$(EXTVERSION).sql
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
