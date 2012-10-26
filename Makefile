@@ -1,6 +1,6 @@
 EXTENSION    = parray_gin
-EXTVERSION   = 1.1.2
-MODULE_big   = parray_gin
+EXTVERSION   = 1.1.3
+MODULE_big   = $(EXTENSION)
 OBJS         = $(patsubst %.c,%.o,$(wildcard src/*.c))
 DATA         = $(wildcard sql/*--*.sql) sql/$(EXTENSION)--$(EXTVERSION).sql
 DOCS         = $(wildcard doc/*.md)

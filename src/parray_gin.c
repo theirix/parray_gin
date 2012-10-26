@@ -48,7 +48,7 @@ PG_MODULE_MAGIC;
  * Internal functions declarations
  */
 
-int32 gin_compare_string_partial(char *a, int lena, char *b, int lenb);
+int32 gin_compare_string_partial(char *a, size_t lena, char *b, size_t lenb);
 void* memmem_ported(const void *l, size_t l_len, const void *s, size_t s_len);
 
 
@@ -56,15 +56,15 @@ void* memmem_ported(const void *l, size_t l_len, const void *s, size_t s_len);
  * Exported functions
  */
 
-Datum parray_gin_compare(PG_FUNCTION_ARGS);
-Datum parray_gin_extract_value(PG_FUNCTION_ARGS);
-Datum parray_gin_extract_query(PG_FUNCTION_ARGS);
-Datum parray_gin_consistent(PG_FUNCTION_ARGS);
-Datum parray_gin_compare_partial(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_gin_compare(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_gin_extract_value(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_gin_extract_query(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_gin_consistent(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_gin_compare_partial(PG_FUNCTION_ARGS);
 
-Datum parray_op_text_array_contains_partial(PG_FUNCTION_ARGS);
-Datum parray_op_text_array_contained_partial(PG_FUNCTION_ARGS);
-Datum text_equal_partial(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_op_text_array_contains_partial(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_op_text_array_contained_partial(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum text_equal_partial(PG_FUNCTION_ARGS);
 
 
 /*
@@ -540,7 +540,7 @@ memmem_ported(const void *l, size_t l_len, const void *s, size_t s_len)
  * returns zero value iff b has partial a (b is larger)
  */
 int
-gin_compare_string_partial(char *a, int lena, char *b, int lenb)
+gin_compare_string_partial(char *a, size_t lena, char *b, size_t lenb)
 {
 	int cmp;
 
