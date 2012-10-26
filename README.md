@@ -60,6 +60,7 @@ appropriated permissions - create database, for example):
 
 Use this method if you have a precompiled extension and do not want to install this with help of PGXS.
 Or maybe you just do not have GNU make on a production server.
+Or if you use Windows (use MSVC 2008 for Postgres 9.1 and MSVC 2010 for Postgres 9.2).
 
 Copy library to the PostgreSQL library directory:
 
