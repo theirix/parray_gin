@@ -27,13 +27,15 @@
 #include "utils/formatting.h"
 #include "utils/fmgroids.h"
 
+#include "trgm.h"
+
 PG_MODULE_MAGIC;
 
 /* Log level, usually DEBUG5 (silent) or NOTICE (messages are sent to client side) */
 #define PARRAY_GIN_TRACE_LEVEL DEBUG5
 
 /* Controls logging from GIN functions. A lot of output */
-#define TRACE_LIKE_HELL 0
+#define TRACE_LIKE_HELL 1
 
 /* 
  * Strategy */
@@ -64,8 +66,9 @@ PGDLLEXPORT Datum parray_gin_compare_partial(PG_FUNCTION_ARGS);
 
 PGDLLEXPORT Datum parray_op_text_array_contains_partial(PG_FUNCTION_ARGS);
 PGDLLEXPORT Datum parray_op_text_array_contained_partial(PG_FUNCTION_ARGS);
-PGDLLEXPORT Datum text_equal_partial(PG_FUNCTION_ARGS);
 
+Datum text_equal_partial(PG_FUNCTION_ARGS);
+Datum trigrams_from_textarray(PG_FUNCTION_ARGS);
 
 /*
  * Declare V1 exports
@@ -80,6 +83,7 @@ PG_FUNCTION_INFO_V1(parray_gin_compare_partial);
 PG_FUNCTION_INFO_V1(parray_op_text_array_contains_partial);
 PG_FUNCTION_INFO_V1(parray_op_text_array_contained_partial);
 PG_FUNCTION_INFO_V1(text_equal_partial);
+PG_FUNCTION_INFO_V1(trigrams_from_textarray);
 
 
 /**
@@ -273,23 +277,108 @@ parray_op_text_array_contained_partial(PG_FUNCTION_ARGS)
 Datum
 parray_gin_compare(PG_FUNCTION_ARGS)
 {
-	text *key1 = PG_GETARG_TEXT_P(0);
-	text *key2 = PG_GETARG_TEXT_P(1);
+	int32 key1 = PG_GETARG_INT32(0);
+	int32 key2 = PG_GETARG_INT32(1);
 
-	int32 result = DatumGetInt32(DirectFunctionCall2Coll(bttextcmp, DEFAULT_COLLATION_OID, PointerGetDatum(key1), PointerGetDatum(key2)));
+	int32 result = DatumGetInt32(DirectFunctionCall2Coll(btint4cmp, DEFAULT_COLLATION_OID, PointerGetDatum(key1), PointerGetDatum(key2)));
 
 #if TRACE_LIKE_HELL
 	{
-	char *pstr1, *pstr2;
-	pstr1 = text_to_cstring(key1);
-	pstr2 = text_to_cstring(key2);
-	elog(PARRAY_GIN_TRACE_LEVEL, "GIN compare: %s vs %s -> %d", pstr1, pstr2, result);
-	pfree(pstr1);
-	pfree(pstr2);
+	elog(PARRAY_GIN_TRACE_LEVEL, "GIN compare: %d vs %d -> %d", key1, key2, result);
 	}
 #endif
 
 	PG_RETURN_INT32(result);
+}
+
+/*
+ * TODO document
+ */
+Datum trigrams_from_textarray(PG_FUNCTION_ARGS)
+{
+	ArrayType *items = PG_GETARG_ARRAYTYPE_P(0);
+	int32 *countTrigrams = (int32*)PG_GETARG_POINTER(1);
+
+	/* Result type, contains int32 datums with all trigrams for all
+	 * indexed strings from a value */
+	Datum *keys = NULL;
+
+	int indexKey, i;
+	size_t countArrTrigram = 0;
+
+	Datum *itemKeys;
+	bool *itemNullFlags = NULL;
+	int32 countItemKeys;
+	int16 elmlen;
+	bool elmbyval;
+	char elmalign;
+
+	*countTrigrams = 0;
+
+	get_typlenbyvalalign(ARR_ELEMTYPE(items),
+			&elmlen, &elmbyval, &elmalign);
+
+	deconstruct_array(items, ARR_ELEMTYPE(items),
+			elmlen, elmbyval, elmalign,
+			&itemKeys, &itemNullFlags, &countItemKeys);
+
+	/* preallocate array, it's a upper bound estimate but check for overflow
+	 * later anyway */
+	for (indexKey = 0; indexKey < countItemKeys; ++indexKey)
+		countArrTrigram += 
+			DatumGetInt32(OidFunctionCall1Coll(F_TEXTLEN, PG_GET_COLLATION(), itemKeys[indexKey])) + 2;
+	keys = (Datum*)palloc(countArrTrigram * sizeof(TRGM));
+	elog(PARRAY_GIN_TRACE_LEVEL, "GIN extract_value preallocate %ld items", countArrTrigram);
+
+	for (indexKey = 0; indexKey < countItemKeys; ++indexKey)
+	{
+		char *pstr;
+		TRGM *trg;
+		trgm *ptr;
+		int32 item;
+		if (!itemNullFlags[indexKey])
+		{
+			pstr = text_to_cstring(DatumGetTextP(itemKeys[indexKey]));
+			trg = generate_trgm( pstr, strlen( pstr ) );
+			ptr = GETARR(trg);
+			for (i = 0; i < ARRNELEM(trg); i++)
+			{
+				/* grow on need */
+				if (*countTrigrams >= countArrTrigram)
+				{
+					countArrTrigram = (size_t)(1.4*countArrTrigram);
+					keys = repalloc( keys, countArrTrigram );
+				}
+				item = trgm2int(ptr++);
+				keys[*countTrigrams] = Int32GetDatum(item);
+				(*countTrigrams)++;
+			}
+		}
+	}
+#if TRACE_LIKE_HELL
+	{
+	text *tstr;
+	char *pstr;
+	int i;
+
+	tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(items), CStringGetTextDatum("#")));
+	pstr = text_to_cstring(tstr);
+	elog(PARRAY_GIN_TRACE_LEVEL, "GIN trigrams_from_textarray: %d items, %s, %d trigrams", countItemKeys, pstr, *countTrigrams);
+	pfree(pstr);
+	for (i = 0; i < countItemKeys; ++i)
+	{
+		pstr = text_to_cstring(DatumGetTextP(itemKeys[i]));
+		elog(PARRAY_GIN_TRACE_LEVEL, "  trigrams_from_textarray item %d = %s", i, pstr);
+		pfree(pstr);
+	}
+	for (i = 0; i < *countTrigrams; ++i)
+	{
+		elog(PARRAY_GIN_TRACE_LEVEL, "  trigrams_from_textarray item tgrm = %x", DatumGetInt32(keys[i]));
+	}
+	}
+#endif
+
+	PG_RETURN_POINTER(keys);
 }
 
 /* 
@@ -303,40 +392,18 @@ parray_gin_extract_value(PG_FUNCTION_ARGS)
 	int32 *nkeys = (int32*)PG_GETARG_POINTER(1);
 	bool **nullFlags = (bool**)PG_GETARG_POINTER(2);
 
+	/* Result type, contains int32 datums with all trigrams for all
+	 * indexed strings from a value */
 	Datum *keys;
 
-	int16 elmlen;
-	bool elmbyval;
-	char elmalign;
-	int nelems;
-
-	get_typlenbyvalalign(ARR_ELEMTYPE(itemValue),
-			&elmlen, &elmbyval, &elmalign);
-
-	deconstruct_array(itemValue, ARR_ELEMTYPE(itemValue),
-			elmlen, elmbyval, elmalign,
-			&keys, nullFlags, &nelems);
-
-	*nkeys = nelems;
-	
 #if TRACE_LIKE_HELL
-	{
-	text *tstr;
-	char *pstr;
-	int i;
-
-	tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(itemValue), CStringGetTextDatum("#")));
-	pstr = text_to_cstring(tstr);
-	elog(PARRAY_GIN_TRACE_LEVEL, "GIN extract_value: %d items, %s", *nkeys, pstr);
-	pfree(pstr);
-	for (i = 0; i < *nkeys; ++i)
-	{
-		pstr = text_to_cstring(DatumGetTextP(keys[i]));
-		elog(PARRAY_GIN_TRACE_LEVEL, "  extract_value item %d = %s", i, pstr);
-		pfree(pstr);
-	}
-	}
+	elog(PARRAY_GIN_TRACE_LEVEL, "GIN extract_value invoked");
 #endif
+
+	keys = (Datum*)DirectFunctionCall2Coll(trigrams_from_textarray, PG_GET_COLLATION(),
+				PointerGetDatum(itemValue), PointerGetDatum(nkeys));
+	
+	*nullFlags = NULL;
 
 	PG_RETURN_POINTER(keys);
 }
@@ -355,14 +422,13 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 	bool **nullFlags = (bool**)PG_GETARG_POINTER(5);
 	/* int32 *searchMode = (int32*)PG_GETARG_POINTER(6);*/
 
-	ArrayType *queryArray;
 	Datum *keys;
 	int i;
 
-	int16 elmlen;
-	bool elmbyval;
-	char elmalign;
-	int nelems;
+#if TRACE_LIKE_HELL
+	elog(PARRAY_GIN_TRACE_LEVEL, "GIN extract_query invoked");
+#endif
+
 
 	if (strategy != PARRAY_GIN_STRATEGY_CONTAINS &&
 			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL &&
@@ -371,16 +437,10 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
 
-	queryArray = DatumGetArrayTypePCopy(query);
-	/* query is an array of texts, parse it and return */
-	get_typlenbyvalalign(ARR_ELEMTYPE(queryArray),
-			&elmlen, &elmbyval, &elmalign);
-
-	deconstruct_array(queryArray, ARR_ELEMTYPE(queryArray),
-			elmlen, elmbyval, elmalign,
-			&keys, nullFlags, &nelems);
-
-	*nkeys = nelems;
+	/* query is an array of texts, parse it and return trigrams */
+	keys = (Datum*)DirectFunctionCall2Coll(trigrams_from_textarray, PG_GET_COLLATION(),
+				query, PointerGetDatum(nkeys));
+	*nullFlags = NULL;
 
 	/* don't bother about empty queries
 	 * but be careful - it will lead to an undefined result
@@ -398,25 +458,6 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 			(*pmatch)[i] = TRUE;
 		}
 	}
-
-#if TRACE_LIKE_HELL
-	{
-	char *pstr;
-	text *tstr;
-
-	tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(queryArray), CStringGetTextDatum("#")));
-	pstr = text_to_cstring(tstr);
-	elog(PARRAY_GIN_TRACE_LEVEL, "GIN extract_query: json=%s strategy=%d -> %d items", 
-			pstr, (int)strategy, (int)*nkeys);
-	pfree(pstr);
-	for (i = 0; i < *nkeys; ++i)
-	{
-		pstr = text_to_cstring(DatumGetTextP(keys[i]));
-		elog(PARRAY_GIN_TRACE_LEVEL, "  extract_query item %d = %s", i, pstr);
-		pfree(pstr);
-	}
-	}
-#endif
 	
 	PG_RETURN_POINTER(keys);
 }

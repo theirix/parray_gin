@@ -6,7 +6,7 @@ DATA         = $(wildcard sql/*--*.sql) sql/$(EXTENSION)--$(EXTVERSION).sql
 DOCS         = $(wildcard doc/*.md)
 TESTS        = $(wildcard test/sql/*.sql)
 REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
-REGRESS_OPTS = --inputdir=test
+REGRESS_OPTS += --inputdir=test
 PG_CONFIG    := pg_config
 #PG_CPPFLAGS  = -g -O0
 EXTRA_CLEAN  = sql/$(EXTENSION)--$(EXTVERSION).sql
