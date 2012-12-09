@@ -32,7 +32,7 @@
 PG_MODULE_MAGIC;
 
 /* Log level, usually DEBUG5 (silent) or NOTICE (messages are sent to client side) */
-#define PARRAY_GIN_TRACE_LEVEL DEBUG5
+#define PARRAY_GIN_TRACE_LEVEL NOTICE
 
 /* Controls logging from GIN functions. A lot of output */
 #define TRACE_LIKE_HELL 1
@@ -41,10 +41,12 @@ PG_MODULE_MAGIC;
  * Strategy */
 /* @> operator strategy */
 #define PARRAY_GIN_STRATEGY_CONTAINS 7
+/* <@ operator strategy */
+#define PARRAY_GIN_STRATEGY_CONTAINED_BY 8
 /* @@> operator strategy */
-#define PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL 8
+#define PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL 9
 /* <@@ operator strategy */
-#define PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL 9
+#define PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL 10
 
 /*
  * Internal functions declarations
@@ -52,6 +54,8 @@ PG_MODULE_MAGIC;
 
 int32 gin_compare_string_partial(char *a, size_t lena, char *b, size_t lenb);
 void* memmem_ported(const void *l, size_t l_len, const void *s, size_t s_len);
+bool is_valid_strategy (int strategy);
+
 
 
 /*
@@ -64,10 +68,14 @@ PGDLLEXPORT Datum parray_gin_extract_query(PG_FUNCTION_ARGS);
 PGDLLEXPORT Datum parray_gin_consistent(PG_FUNCTION_ARGS);
 PGDLLEXPORT Datum parray_gin_compare_partial(PG_FUNCTION_ARGS);
 
-PGDLLEXPORT Datum parray_op_text_array_contains_partial(PG_FUNCTION_ARGS);
-PGDLLEXPORT Datum parray_op_text_array_contained_partial(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_contains_strict(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_contained_strict(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_contains_partial(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_contained_partial(PG_FUNCTION_ARGS);
 
-Datum text_equal_partial(PG_FUNCTION_ARGS);
+/*Datum text_equal_partial(PG_FUNCTION_ARGS);*/
+Datum dump_array(PG_FUNCTION_ARGS);
+Datum trigramsarray_from_textarray(PG_FUNCTION_ARGS);
 Datum trigrams_from_textarray(PG_FUNCTION_ARGS);
 
 /*
@@ -80,20 +88,25 @@ PG_FUNCTION_INFO_V1(parray_gin_extract_query);
 PG_FUNCTION_INFO_V1(parray_gin_consistent);
 PG_FUNCTION_INFO_V1(parray_gin_compare_partial);
 
-PG_FUNCTION_INFO_V1(parray_op_text_array_contains_partial);
-PG_FUNCTION_INFO_V1(parray_op_text_array_contained_partial);
-PG_FUNCTION_INFO_V1(text_equal_partial);
-PG_FUNCTION_INFO_V1(trigrams_from_textarray);
+PG_FUNCTION_INFO_V1(parray_contains_strict);
+PG_FUNCTION_INFO_V1(parray_contained_strict);
+PG_FUNCTION_INFO_V1(parray_contains_partial);
+PG_FUNCTION_INFO_V1(parray_contained_partial);
 
+/*PG_FUNCTION_INFO_V1(text_equal_partial);*/
+PG_FUNCTION_INFO_V1(dump_array);
+PG_FUNCTION_INFO_V1(trigramsarray_from_textarray);
+PG_FUNCTION_INFO_V1(trigrams_from_textarray);
 
 /**
  *
  * Operator support
+ * Check whether array1 contains array2
  *
  */
 
 static bool
-text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation, bool matchall, bool partial)
+int_array_contains_partial(ArrayType *array1, ArrayType *array2, bool matchall)
 {
 	bool		result = matchall;
 	Oid			element_type = ARR_ELEMTYPE(array1);
@@ -188,10 +201,8 @@ text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation,
 			/*
 			 * Apply the operator to the element pair
 			 */
-			if (partial)
-				oprresult = DatumGetBool(DirectFunctionCall2Coll(text_equal_partial, collation, elt1, elt2));
-			else
-				oprresult = DatumGetBool(DirectFunctionCall2Coll(texteq, collation, elt1, elt2));
+			
+			oprresult = DatumGetInt32( elt1 ) == DatumGetInt32( elt2 );
 			if (oprresult)
 				break;
 		}
@@ -222,6 +233,44 @@ text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation,
 	return result;
 }
 
+/* 
+ * Underlying functions for @> and <@ operators
+ * They are aliases to @@> and <@@ operators
+ * Trigram index can't distinct partial query from strict,
+ * it can be done only by querying non-indexed item
+ */
+Datum
+parray_contains_strict(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_BOOL(DirectFunctionCall2Coll(parray_contains_partial, PG_GET_COLLATION(), PG_GETARG_DATUM(0), PG_GETARG_DATUM(1)));
+}
+
+/* 
+ * Paired <@ function, see note above
+ */
+Datum
+parray_contained_strict(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_BOOL(DirectFunctionCall2Coll(parray_contained_partial, PG_GET_COLLATION(), PG_GETARG_DATUM(0), PG_GETARG_DATUM(1)));
+}
+
+Datum dump_array(PG_FUNCTION_ARGS)
+{
+	ArrayType  *array = PG_GETARG_ARRAYTYPE_P(0);
+	const char* prefix = PG_GETARG_CSTRING(1);
+
+	text *tstr;
+	char *pstr;
+	int nelems;
+
+	tstr = DatumGetTextP(OidFunctionCall2Coll(F_ARRAY_TO_TEXT, PG_GET_COLLATION(), PointerGetDatum(array), CStringGetTextDatum("#")));
+	pstr = text_to_cstring(tstr);
+	nelems = ArrayGetNItems(ARR_NDIM(array), ARR_DIMS(array));
+	elog(PARRAY_GIN_TRACE_LEVEL, "%s, count %d, items: %s", prefix, nelems, pstr );
+	pfree(pstr);
+
+	PG_RETURN_VOID();
+}
 
 /* 
  * Underlying functions for @@> and <@@ operators
@@ -229,36 +278,58 @@ text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation,
  * Elements are text and compared partially (substring)
  */
 Datum
-parray_op_text_array_contains_partial(PG_FUNCTION_ARGS)
+parray_contains_partial(PG_FUNCTION_ARGS)
 {
-	ArrayType  *array1 = PG_GETARG_ARRAYTYPE_P(0);
-	ArrayType  *array2 = PG_GETARG_ARRAYTYPE_P(1);
-	Oid			collation = PG_GET_COLLATION();
+	ArrayType  *arrayTrigrams = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *arrayText = PG_GETARG_ARRAYTYPE_P(1);
+	ArrayType  *arrayTrigramsRhs;
 	bool		result;
 
-	result = text_array_contains_partial(array2, array1, collation, true, true);
+	/* Extract from rhs text array an array of trigrams (actually arraytype) */
+	arrayTrigramsRhs = DatumGetArrayTypeP(DirectFunctionCall1Coll(trigrams_from_textarray, PG_GET_COLLATION(),
+				PointerGetDatum(arrayText)));
 
-	PG_FREE_IF_COPY(array1, 0);
-	PG_FREE_IF_COPY(array2, 1);
+	/* Now compare two arrays */
+	result = int_array_contains_partial(arrayTrigrams, arrayTrigramsRhs, true);
+
+#if TRACE_LIKE_HELL
+	DirectFunctionCall2Coll(dump_array, PG_GET_COLLATION(), PointerGetDatum(arrayTrigrams), CStringGetDatum("GIN parray_contains_partial lhs trigrams"));
+	DirectFunctionCall2Coll(dump_array, PG_GET_COLLATION(), PointerGetDatum(arrayText), CStringGetDatum("GIN parray_contains_partial rhs text"));
+	DirectFunctionCall2Coll(dump_array, PG_GET_COLLATION(), PointerGetDatum(arrayTrigramsRhs), CStringGetDatum("GIN parray_contains_partial rhs trigrams"));
+	elog(PARRAY_GIN_TRACE_LEVEL, "GIN parray_contains_partial result=%d", result);
+#endif
+
+	pfree(arrayTrigramsRhs);
 
 	PG_RETURN_BOOL(result);
 }
-
+	
 /* 
  * Paired <@@ function, see note above
  */
 Datum
-parray_op_text_array_contained_partial(PG_FUNCTION_ARGS)
+parray_contained_partial(PG_FUNCTION_ARGS)
 {
-	ArrayType  *array1 = PG_GETARG_ARRAYTYPE_P(0);
-	ArrayType  *array2 = PG_GETARG_ARRAYTYPE_P(1);
-	Oid			collation = PG_GET_COLLATION();
+	ArrayType  *arrayTrigrams = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *arrayText = PG_GETARG_ARRAYTYPE_P(1);
+	ArrayType  *arrayTrigramsRhs;
 	bool		result;
 
-	result = text_array_contains_partial(array1, array2, collation, true, true);
+	/* Extract from rhs text array an array of trigrams (actually arraytype) */
+	arrayTrigramsRhs = DatumGetArrayTypeP(DirectFunctionCall1Coll(trigrams_from_textarray, PG_GET_COLLATION(),
+				PointerGetDatum(arrayText)));
 
-	PG_FREE_IF_COPY(array1, 0);
-	PG_FREE_IF_COPY(array2, 1);
+	/* Now compare two arrays */
+	result = int_array_contains_partial(arrayTrigramsRhs, arrayTrigrams, true);
+
+#if TRACE_LIKE_HELL
+	DirectFunctionCall2Coll(dump_array, PG_GET_COLLATION(), PointerGetDatum(arrayTrigrams), CStringGetDatum("GIN parray_contained_partial lhs trigrams"));
+	DirectFunctionCall2Coll(dump_array, PG_GET_COLLATION(), PointerGetDatum(arrayText), CStringGetDatum("GIN parray_contained_partial rhs text"));
+	DirectFunctionCall2Coll(dump_array, PG_GET_COLLATION(), PointerGetDatum(arrayTrigramsRhs), CStringGetDatum("GIN parray_contained_partial rhs trigrams"));
+	elog(PARRAY_GIN_TRACE_LEVEL, "GIN parray_contained_partial result=%d", result);
+#endif
+
+	pfree(arrayTrigramsRhs);
 
 	PG_RETURN_BOOL(result);
 }
@@ -290,6 +361,27 @@ parray_gin_compare(PG_FUNCTION_ARGS)
 
 	PG_RETURN_INT32(result);
 }
+
+/*
+ * TODO document
+ */
+Datum trigramsarray_from_textarray(PG_FUNCTION_ARGS)
+{
+	ArrayType *items = PG_GETARG_ARRAYTYPE_P(0);
+	int32 countTrigrams;
+	Datum *keys = NULL;
+	ArrayType *arrayKeys = NULL; 
+	
+	keys = (Datum*)DirectFunctionCall2Coll(trigrams_from_textarray, PG_GET_COLLATION(),
+				PointerGetDatum(items), PointerGetDatum(&countTrigrams));
+	
+	if (keys)
+	{
+		arrayKeys = construct_array(keys, countTrigrams, INT4OID, sizeof(int4), true, 'i' );
+	}
+	PG_RETURN_ARRAYTYPE_P(arrayKeys);
+}
+
 
 /*
  * TODO document
@@ -423,16 +515,13 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 	/* int32 *searchMode = (int32*)PG_GETARG_POINTER(6);*/
 
 	Datum *keys;
-	int i;
 
 #if TRACE_LIKE_HELL
 	elog(PARRAY_GIN_TRACE_LEVEL, "GIN extract_query invoked");
 #endif
 
 
-	if (strategy != PARRAY_GIN_STRATEGY_CONTAINS &&
-			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL &&
-			strategy != PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
+	if (!is_valid_strategy( strategy ))
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
@@ -446,18 +535,20 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 	 * but be careful - it will lead to an undefined result
 	 * searchMode = GIN_SEARCH_MODE_ALL;*/
 
-	if (strategy == PARRAY_GIN_STRATEGY_CONTAINS)
+	*pmatch = NULL;
+	/*if (strategy == PARRAY_GIN_STRATEGY_CONTAINS || strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY)
 	{
 		*pmatch = NULL;
 	}
 	else
 	{
+		int i;
 		*pmatch = (bool*)palloc(sizeof(bool) * *nkeys);
 		for (i = 0; i < *nkeys; ++i)
 		{
 			(*pmatch)[i] = TRUE;
 		}
-	}
+	}*/
 	
 	PG_RETURN_POINTER(keys);
 }
@@ -480,9 +571,7 @@ parray_gin_consistent(PG_FUNCTION_ARGS)
 	bool result = false;
 	int i;
 
-	if (strategy != PARRAY_GIN_STRATEGY_CONTAINS && 
-			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL &&
-			strategy != PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
+	if (!is_valid_strategy( strategy ))
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
@@ -503,6 +592,7 @@ parray_gin_consistent(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(result);
 }
 
+#if 0
 /* 
  * Prefix equal for two text arguments
  * Returns true iff arg2 has partial arg1 (so arg2 is larger)
@@ -594,6 +684,20 @@ gin_compare_string_partial(char *a, size_t lena, char *b, size_t lenb)
 
 	return cmp;
 }
+#endif
+
+/** 
+ * Is a strategy valid
+ */
+bool
+is_valid_strategy (int strategy)
+{
+	return 
+		strategy == PARRAY_GIN_STRATEGY_CONTAINS ||
+		strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY ||
+		strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL ||
+		strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL;
+}
 
 /*
  * Compare keys partially
@@ -602,7 +706,10 @@ gin_compare_string_partial(char *a, size_t lena, char *b, size_t lenb)
 Datum
 parray_gin_compare_partial(PG_FUNCTION_ARGS)
 {
-	text *partial_key = PG_GETARG_TEXT_P(0);
+	ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("Not implemented")));
+	PG_RETURN_INT32(0);
+
+	/*text *partial_key = PG_GETARG_TEXT_P(0);
 	text *key = PG_GETARG_TEXT_P(1);
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
 
@@ -610,9 +717,7 @@ parray_gin_compare_partial(PG_FUNCTION_ARGS)
 	char *str_key;
 	int result;
 
-	if (strategy != PARRAY_GIN_STRATEGY_CONTAINS &&
-			strategy != PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL &&
-			strategy != PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL)
+	if (!is_valid_strategy( strategy ))
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME), errmsg("wrong strategy %d", strategy)));
 	}
@@ -620,7 +725,7 @@ parray_gin_compare_partial(PG_FUNCTION_ARGS)
 	str_partial_key = text_to_cstring(partial_key); 
 	str_key = text_to_cstring(key); 
 
-	if (strategy == PARRAY_GIN_STRATEGY_CONTAINS)
+	if (strategy == PARRAY_GIN_STRATEGY_CONTAINS || strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY)
 	{
 		if (strcmp(str_partial_key, str_key))
 			result = 1;
@@ -635,11 +740,11 @@ parray_gin_compare_partial(PG_FUNCTION_ARGS)
 #if TRACE_LIKE_HELL
 	elog(PARRAY_GIN_TRACE_LEVEL, "GIN compare_partial: partial_key=%s key=%s -> %d", str_partial_key, str_key, result);
 #endif
-
+	
 	pfree(str_partial_key);
 	pfree(str_key);
 
-	PG_RETURN_INT32(result);
+	PG_RETURN_INT32(result);*/
 }
 
 /* vim: set noexpandtab tabstop=4 shiftwidth=4: */

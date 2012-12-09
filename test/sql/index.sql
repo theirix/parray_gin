@@ -2,114 +2,15 @@ set client_min_messages to 'error';
 drop extension if exists "parray_gin" cascade;
 create extension "parray_gin";
 set client_min_messages to 'notice';
+
 \t on
 \pset format unaligned
--- t
-select array['foo', 'bar', 'baz'] @> array['foo'];
-t
--- t
-select array['foo', 'bar', 'baz'] @> array['foo', 'bar'];
-t
--- t
-select array['foo', 'bar', 'baz'] @> array['baz', 'foo'];
-t
--- f
-select array['foo', 'bar', 'baz'] @> array['qux'];
-f
--- t
-select array['foo', 'bar', 'baz'] @> array[]::text[];
-t
--- t
-select array[]::text[] @> array[]::text[];
-t
--- f
-select array[]::text[] @> array['qux'];
-f
--- t
-select array['foo', 'bar', 'baz'] @@> array['foo'];
-t
--- t
-select array['foo', 'bar', 'baz'] @@> array['foo', 'bar'];
-t
--- t
-select array['foo', 'bar', 'baz'] @@> array['baz', 'foo'];
-t
--- f
-select array['foo', 'bar', 'baz'] @@> array['qux'];
-f
--- t
-select array['foo', 'bar', 'baz'] @@> array[]::text[];
-t
--- t
-select array[]::text[] @> array[]::text[];
-t
--- f
-select array[]::text[] @> array['qux'];
-f
--- t
-select array['foo', 'bar', 'baz'] @@> array['fo'];
-t
--- t
-select array['foo', 'bar', 'baz'] @@> array['ba'];
-t
--- t
-select array['foo', 'bar', 'baz'] @@> array['b'];
-t
--- t
-select array['foo', 'bar', 'baz'] @@> array[''];
-t
--- f
-select array['foo', 'bar', 'baz'] @@> array['baq'];
-f
--- t
-select array['foo', 'foobar', 'baz'] @@> array['foo'];
-t
--- t
-select array['foo', 'boo', 'baz'] @@> array['oo'];
-t
--- t
-select array['foo', 'boo', 'baz'] @@> array['ba', 'fo'];
-t
--- f
-select array['foo', 'boo', 'baz'] @@> array['ooz'];
-f
--- t
-select array['food', 'booze', 'baz'] @@> array['ooz'];
-t
--- t
-select array['fo'] <@@ array['foo', 'bar', 'baz'];
-t
--- t
-select array['ba', 'fo'] <@@ array['foo', 'bar', 'baz'];
-t
--- t
-select array['ba'] <@@ array['foo', 'bar', 'baz'];
-t
--- t
-select array['b'] <@@ array['foo', 'bar', 'baz'];
-t
--- t
-select array[''] <@@ array['foo', 'bar', 'baz'];
-t
--- f
-select array['baq'] <@@ array['foo', 'bar', 'baz'];
-f
--- t
-select array['foo'] <@@ array['foo', 'foobar', 'baz'];
-t
--- t
-select array['oo'] <@@ array['foo', 'boo', 'baz'];
-t
--- f
-select array['ooz'] <@@ array['foo', 'boo', 'baz'];
-f
--- t
-select array['ooz'] <@@ array['food', 'booze', 'baz'];
-t
+
 set client_min_messages to 'error';
 drop table if exists test_table;
 create table test_table(id bigserial, val text[]);
 set client_min_messages to 'notice';
+
 insert into test_table(val) values(array['foo1','bar1','baz1']);
 insert into test_table(val) values(array['foo2','bar2','baz2']);
 insert into test_table(val) values(array['foo3','bar3','baz3']);
@@ -122,41 +23,35 @@ insert into test_table(val) values(array['foo4','bar4','baz4']);
 insert into test_table(val) values(array['foo4','bar4one','baz4']);
 insert into test_table(val) values(array['foo4','bar4two','baz4']);
 insert into test_table(val) values(array['foo4','bar4three','baz4']);
+
 -- 30
 select count(*) from test_table;
-30
+
 -- NOTICE:  index "test_val_idx" does not exist, skipping
 drop index if exists test_val_idx;
-NOTICE:  index "test_val_idx" does not exist, skipping
 create index test_val_idx on test_table using gin (val parray_gin_ops);
+
 -- 6
 select count(*) from test_table where val @@> array['bar4'];
-6
 -- 3
 select count(*) from test_table where val @> array['bar4'];
-3
 -- 8
 select count(*) from test_table where val @@> array['bar3'];
-8
 -- 8
 select count(*) from test_table where val @> array['bar3'];
-8
 -- 0
 select count(*) from test_table where val @@> array['qux'];
-0
 -- 0
 select count(*) from test_table where val @> array['qux'];
-0
 ----- select count(*) from test_table where val @@> array[]::text[];
 ----- select count(*) from test_table where val @> array[]::text[];
 -- 30
 select count(*) from test_table where val @@> array[''];
-30
+
 -- 3
 select count(*) from test_table where val <@@ array['kung-foo4','xxxbar4','xxxbaz4'];
-3
 -- 0
 select count(*) from test_table where val <@@ array['kung-foo4'];
-0
+
 \t off
 \pset format aligned
