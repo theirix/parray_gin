@@ -1,110 +1,80 @@
 set client_min_messages to 'error';
 drop extension if exists "parray_gin" cascade;
 create extension "parray_gin";
-set client_min_messages to 'notice';
+set client_min_messages to 'warning';
 \t on
 \pset format unaligned
 -- t
-select array['foo', 'bar', 'baz'] @> array['foo'];
+select (array['foo', 'bar', 'baz']) @> array['foo'];
 t
 -- t
-select array['foo', 'bar', 'baz'] @> array['foo', 'bar'];
+select (array['foo', 'bar', 'baz']) @> array['foo', 'bar'];
 t
 -- t
-select array['foo', 'bar', 'baz'] @> array['baz', 'foo'];
-t
--- f
-select array['foo', 'bar', 'baz'] @> array['qux'];
-f
--- t
-select array['foo', 'bar', 'baz'] @> array[]::text[];
-t
--- t
-select array[]::text[] @> array[]::text[];
+select (array['foo', 'bar', 'baz']) @> array['baz', 'foo'];
 t
 -- f
-select array[]::text[] @> array['qux'];
+select (array['foo', 'bar', 'baz']) @> array['qux'];
 f
 -- t
-select array['foo', 'bar', 'baz'] @@> array['foo'];
+select (array['foo', 'bar', 'baz']) @> array[]::text[];
 t
 -- t
-select array['foo', 'bar', 'baz'] @@> array['foo', 'bar'];
-t
--- t
-select array['foo', 'bar', 'baz'] @@> array['baz', 'foo'];
+select (array[]::text[]) @> array[]::text[];
 t
 -- f
-select array['foo', 'bar', 'baz'] @@> array['qux'];
+select (array[]::text[]) @> array['qux'];
 f
 -- t
-select array['foo', 'bar', 'baz'] @@> array[]::text[];
+select (array['foo', 'bar', 'baz']) @@> array['foo'];
 t
 -- t
-select array[]::text[] @> array[]::text[];
+select (array['foo', 'bar', 'baz']) @@> array['foo', 'bar'];
+t
+-- t
+select (array['foo', 'bar', 'baz']) @@> array['baz', 'foo'];
 t
 -- f
-select array[]::text[] @> array['qux'];
+select (array['foo', 'bar', 'baz']) @@> array['qux'];
 f
 -- t
-select array['foo', 'bar', 'baz'] @@> array['fo'];
+select (array['foo', 'bar', 'baz']) @@> array[]::text[];
 t
 -- t
-select array['foo', 'bar', 'baz'] @@> array['ba'];
-t
--- t
-select array['foo', 'bar', 'baz'] @@> array['b'];
-t
--- t
-select array['foo', 'bar', 'baz'] @@> array[''];
+select (array[]::text[]) @> array[]::text[];
 t
 -- f
-select array['foo', 'bar', 'baz'] @@> array['baq'];
+select (array[]::text[]) @> array['qux'];
 f
 -- t
-select array['foo', 'foobar', 'baz'] @@> array['foo'];
+select (array['foo', 'bar', 'baz']) @@> array['fo%'];
 t
 -- t
-select array['foo', 'boo', 'baz'] @@> array['oo'];
+select (array['foo', 'bar', 'baz']) @@> array['ba%'];
 t
 -- t
-select array['foo', 'boo', 'baz'] @@> array['ba', 'fo'];
+select (array['foo', 'bar', 'baz']) @@> array['b%'];
+t
+-- t
+select (array['foo', 'bar', 'baz']) @@> array['%'];
 t
 -- f
-select array['foo', 'boo', 'baz'] @@> array['ooz'];
+select (array['foo', 'bar', 'baz']) @@> array['baq'];
 f
 -- t
-select array['food', 'booze', 'baz'] @@> array['ooz'];
+select (array['foo', 'foobar', 'baz']) @@> array['foo%'];
 t
 -- t
-select array['fo'] <@@ array['foo', 'bar', 'baz'];
+select (array['foo', 'boo', 'baz']) @@> array['%oo%'];
 t
 -- t
-select array['ba', 'fo'] <@@ array['foo', 'bar', 'baz'];
-t
--- t
-select array['ba'] <@@ array['foo', 'bar', 'baz'];
-t
--- t
-select array['b'] <@@ array['foo', 'bar', 'baz'];
-t
--- t
-select array[''] <@@ array['foo', 'bar', 'baz'];
+select (array['foo', 'boo', 'baz']) @@> array['ba%', 'fo%'];
 t
 -- f
-select array['baq'] <@@ array['foo', 'bar', 'baz'];
+select (array['foo', 'boo', 'baz']) @@> array['%ooz%'];
 f
 -- t
-select array['foo'] <@@ array['foo', 'foobar', 'baz'];
-t
--- t
-select array['oo'] <@@ array['foo', 'boo', 'baz'];
-t
--- f
-select array['ooz'] <@@ array['foo', 'boo', 'baz'];
-f
--- t
-select array['ooz'] <@@ array['food', 'booze', 'baz'];
+select (array['food', 'booze', 'baz']) @@> array['%ooz%'];
 t
 \t off
 \pset format aligned
