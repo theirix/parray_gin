@@ -33,10 +33,10 @@ PG_MODULE_MAGIC;
 
 /* Log level, usually DEBUG5 (silent) or NOTICE (messages are sent to the
  * client side) */
-#define PARRAY_GIN_TRACE NOTICE
+#define PARRAY_GIN_TRACE DEBUG5
 
 /* Controls logging from GIN functions. A lot of output */
-#define TRACE_LIKE_HELL 1
+#define TRACE_LIKE_HELL 0
 
 /*
  * Strategy */
@@ -542,9 +542,10 @@ parray_gin_extract_value(PG_FUNCTION_ARGS)
 #endif
 
 	keys = (Datum *) DirectFunctionCall3Coll(trigrams_from_textarray,
-											 PG_GET_COLLATION(),
-						  PointerGetDatum(itemValue), PointerGetDatum(nkeys),
-											 BoolGetDatum(false));
+						PG_GET_COLLATION(),
+						PointerGetDatum(itemValue),
+						PointerGetDatum(nkeys),
+						BoolGetDatum(false));
 
 	*nullFlags = NULL;
 
@@ -584,11 +585,6 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 			 BoolGetDatum(strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL));
 	*nullFlags = NULL;
 
-	/*
-	 * don't bother about empty queries but be careful - it will lead to an
-	 * undefined result searchMode = GIN_SEARCH_MODE_ALL;
-	 */
-
 	*pmatch = NULL;
 
 	PG_RETURN_POINTER(keys);
@@ -620,25 +616,12 @@ parray_gin_consistent(PG_FUNCTION_ARGS)
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME),
 						errmsg("wrong strategy %d", strategy)));
 	}
-
 	*recheck = true;
-
-	if (strategy == PARRAY_GIN_STRATEGY_CONTAINS)
-	{
-		/* all */
-		result = true;
-		for (i = 0; i < nkeys; ++i)
-			if (!check[i])
-				result = false;
-	}
-	else if (strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL)
-	{
-		/* any */
-		result = false;
-		for (i = 0; i < nkeys; ++i)
-			if (check[i])
-				result = true;
-	}
+	/* all */
+	result = true;
+	for (i = 0; i < nkeys; ++i)
+		if (!check[i])
+			result = false;
 
 #if TRACE_LIKE_HELL
 	{
@@ -648,11 +631,12 @@ parray_gin_consistent(PG_FUNCTION_ARGS)
 			 (int) strategy, result ? "true" : "false");
 		DirectFunctionCall3Coll(dump_array, PG_GET_COLLATION(),
 								PointerGetDatum(arrayCheck),
-							CStringGetDatum("  check"), CStringGetDatum(""));
+								CStringGetDatum("  check"),
+								CStringGetDatum(""));
 	}
 #endif
 
 	PG_RETURN_BOOL(result);
 }
 
-/* vim: set noexpandtab tabstop=4 shiftwidth=4: */
+/* vim: set noexpandtab tabstop=4 shiftwidth=4 colorcolumn=80: */

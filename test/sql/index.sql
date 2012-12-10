@@ -26,8 +26,9 @@ insert into test_table(val) values(array['foo4','bar4one','baz4']);
 insert into test_table(val) values(array['foo4','bar4two','baz4']);
 insert into test_table(val) values(array['foo4','bar4three','baz4']);
 insert into test_table(val) values(array['foo4','bar4four','baz4']);
+insert into test_table(val) values(array['foo4','bar4fourty','baz4']);
 
--- 31
+-- 32
 select count(*) from test_table;
 
 drop index if exists test_val_idx;
@@ -38,7 +39,7 @@ select count(*) from test_table where val @> array['foo1','bar1','baz1'];
 -- 8
 select count(*) from test_table where val @@> array['foo1','bar1','baz1'];
 
--- 7
+-- 8
 select count(*) from test_table where val @@> array['bar4%'];
 -- 3
 select count(*) from test_table where val @> array['bar4'];
@@ -52,8 +53,11 @@ select count(*) from test_table where val @@> array['qux%'];
 select count(*) from test_table where val @@> array['qux%'];
 -- 0
 select count(*) from test_table where val @> array['%bar4%o%'];
--- 3
+-- 4
 select count(*) from test_table where val @@> array['%bar4%o%'];
+---- check that 12-sequences between % are not ignored when rechecked
+-- 0
+select count(*) from test_table where val @@> array['%bar4%Z%'];
 ---- todo fix
 ---- select count(*) from test_table where val @@> array[]::text[];
 ---- select count(*) from test_table where val @> array[]::text[];

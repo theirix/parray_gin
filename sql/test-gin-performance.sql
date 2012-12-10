@@ -83,38 +83,38 @@ create index test_tags_idx on test_table using gin (val parray_gin_ops);
 --   expects 3 rows
 
 \echo "Initial"
-explain analyze select * from test_table where val @@> array['bar4'];
-select count(*) from test_table where val @@> array['bar4'];
+explain analyze select * from test_table where val @@> array['bar4%'];
+select count(*) from test_table where val @@> array['bar4%'];
 
 \echo "Select using seq scan"
 set enable_indexscan=0;
 set enable_seqscan=1;
-explain analyze select * from test_table where val @@> array['bar4'];
-select count(*) from test_table where val @@> array['bar4'];
+explain analyze select * from test_table where val @@> array['bar4%'];
+select count(*) from test_table where val @@> array['bar4%'];
 
 \echo "Select using index (GIN) scan"
 set enable_indexscan=1;
 set enable_seqscan=0;
-explain analyze select * from test_table where val @@> array['bar4'];
-select count(*) from test_table where val @@> array['bar4'];
+explain analyze select * from test_table where val @@> array['bar4%'];
+select count(*) from test_table where val @@> array['bar4%'];
 
 \echo "Let Postgres choose the winner"
 \echo "  but usually it fails..."
 set enable_indexscan=1;
 set enable_seqscan=1;
-explain analyze select * from test_table where val @@> array['bar4'];
-select count(*) from test_table where val @@> array['bar4'];
+explain analyze select * from test_table where val @@> array['bar4%'];
+select count(*) from test_table where val @@> array['bar4%'];
 
 \echo "Some integrity checks"
-select count(*), 6 		as expected from test_table where val @@> array['bar4'];
+select count(*), 6 		as expected from test_table where val @@> array['bar4%'];
 select count(*), 3 		as expected from test_table where val @> array['bar4'];
-select count(*), 8192 	as expected from test_table where val @@> array['bar3'];
+select count(*), 8192 	as expected from test_table where val @@> array['bar3%'];
 select count(*), 8192 	as expected from test_table where val @> array['bar3'];
-select count(*), 0 		as expected from test_table where val @@> array['qux'];
+select count(*), 0 		as expected from test_table where val @@> array['qux%'];
 select count(*), 0 		as expected from test_table where val @> array['qux'];
 select count(*), 'anything'	as expected from test_table where val @@> array[]::text[];
 select count(*), 'anything'	as expected from test_table where val @> array[]::text[];
-select count(*), 24582	as expected from test_table where val @@> array[''];
+--select count(*), 24582	as expected from test_table where val @@> array['%'];
 
 \echo "Test insert to already indexed table"
 
