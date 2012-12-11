@@ -1,10 +1,15 @@
 /*-------------------------------------------------------------------------
  *
  * parray_gin.c
- *   GIN support for arrays with partial match
+ *	 GIN support for arrays with partial match
  *
  * Copyright (c) 2012, Con Certeza
  * Author: irix <theirix@concerteza.ru>
+ *
+ * GIN index heavily uses trigram implementation from pg_trgm contrib
+ * module. Files trgm.c and trgm.h are copied without changes 
+ * (excluded only PG_MODULE_MAGIC singleton). We thought postgresql
+ * license allows this kind of code reuse.
  *
  *-------------------------------------------------------------------------
  */
@@ -43,19 +48,21 @@ PG_MODULE_MAGIC;
 /* @> operator strategy */
 #define PARRAY_GIN_STRATEGY_CONTAINS 7
 /* <@ operator strategy */
-/*#define PARRAY_GIN_STRATEGY_CONTAINED_BY 8*/
+#define PARRAY_GIN_STRATEGY_CONTAINED_BY 8
 /* @@> operator strategy */
 #define PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL 9
 /* <@@ operator strategy */
-/*#define PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL 10*/
+#define PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL 10
 
 /*
  * Internal functions declarations
  */
 
 bool		is_valid_strategy(int strategy);
+int32	   *palloc_int32(int32 value);
 ArrayType  *construct_bool_array(bool *raw_array, int count);
 
+Datum		dump_op_args(PG_FUNCTION_ARGS);
 Datum		dump_array(PG_FUNCTION_ARGS);
 Datum		trigrams_from_textarray(PG_FUNCTION_ARGS);
 
@@ -69,7 +76,9 @@ PGDLLEXPORT Datum parray_gin_extract_query(PG_FUNCTION_ARGS);
 PGDLLEXPORT Datum parray_gin_consistent(PG_FUNCTION_ARGS);
 
 PGDLLEXPORT Datum parray_contains_strict(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_contained_strict(PG_FUNCTION_ARGS);
 PGDLLEXPORT Datum parray_contains_partial(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum parray_contained_partial(PG_FUNCTION_ARGS);
 
 /*
  * Declare V1 exports
@@ -81,8 +90,11 @@ PG_FUNCTION_INFO_V1(parray_gin_extract_query);
 PG_FUNCTION_INFO_V1(parray_gin_consistent);
 
 PG_FUNCTION_INFO_V1(parray_contains_strict);
+PG_FUNCTION_INFO_V1(parray_contained_strict);
 PG_FUNCTION_INFO_V1(parray_contains_partial);
+PG_FUNCTION_INFO_V1(parray_contained_partial);
 
+PG_FUNCTION_INFO_V1(dump_op_args);
 PG_FUNCTION_INFO_V1(dump_array);
 PG_FUNCTION_INFO_V1(trigrams_from_textarray);
 
@@ -93,9 +105,10 @@ PG_FUNCTION_INFO_V1(trigrams_from_textarray);
  */
 
 static bool
-text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation,
-							bool matchall, bool partial)
+text_array_contains_partial(ArrayType *array1, ArrayType *array2,
+							Oid collation, bool partial, bool switch_args)
 {
+	bool		matchall = true;
 	bool		result = matchall;
 	Oid			element_type = ARR_ELEMTYPE(array1);
 	int			nelems1;
@@ -189,16 +202,36 @@ text_array_contains_partial(ArrayType *array1, ArrayType *array2, Oid collation,
 
 			if (isnull2)
 				continue;		/* can't match */
+#if TRACE_LIKE_HELL && 0
+			if (switch_args)
+				elog(PARRAY_GIN_TRACE, " cmp %s vs %s",
+					 TextDatumGetCString(elt2), TextDatumGetCString(elt1));
+			else
+				elog(PARRAY_GIN_TRACE, " cmp %s vs %s",
+					 TextDatumGetCString(elt1), TextDatumGetCString(elt2));
+#endif
 
 			/*
 			 * Apply the operator to the element pair
 			 */
 			if (partial)
-				oprresult = DatumGetBool(DirectFunctionCall2Coll(textlike,
+			{
+				if (switch_args)
+					oprresult = DatumGetBool(DirectFunctionCall2Coll(textlike,
 													 collation, elt2, elt1));
+				else
+					oprresult = DatumGetBool(DirectFunctionCall2Coll(textlike,
+													 collation, elt1, elt2));
+			}
 			else
-				oprresult = DatumGetBool(DirectFunctionCall2Coll(texteq,
+			{
+				if (switch_args)
+					oprresult = DatumGetBool(DirectFunctionCall2Coll(texteq,
 													 collation, elt2, elt1));
+				else
+					oprresult = DatumGetBool(DirectFunctionCall2Coll(texteq,
+													 collation, elt1, elt2));
+			}
 
 			if (oprresult)
 				break;
@@ -244,7 +277,8 @@ construct_bool_array(bool *raw_array, int count)
 	for (i = 0; i < count; ++i)
 		pdatum[i] = BoolGetDatum(raw_array[i]);
 	get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-	array = construct_array(pdatum, count, elmtype, elmlen, elmbyval, elmalign);
+	array = construct_array(pdatum, count,
+							elmtype, elmlen, elmbyval, elmalign);
 	pfree(pdatum);
 	return array;
 }
@@ -259,14 +293,36 @@ dump_array(PG_FUNCTION_ARGS)
 	int			nelems;
 
 	tstr = DatumGetTextP(OidFunctionCall3Coll(F_ARRAY_TO_TEXT_NULL,
-						  	PG_GET_COLLATION(),
-							PointerGetDatum(array),
-							CStringGetTextDatum(delim),
-							CStringGetTextDatum("NULL")));
+											  PG_GET_COLLATION(),
+											  PointerGetDatum(array),
+											  CStringGetTextDatum(delim),
+											  CStringGetTextDatum("NULL")));
 	nelems = ArrayGetNItems(ARR_NDIM(array), ARR_DIMS(array));
 	elog(PARRAY_GIN_TRACE, "%s, count %d, items: %s",
 		 prefix, nelems, TextDatumGetCString(tstr));
 
+	PG_RETURN_VOID();
+}
+
+Datum
+dump_op_args(PG_FUNCTION_ARGS)
+{
+	bool		result = PG_GETARG_BOOL(2);
+	const char *prefix = PG_GETARG_CSTRING(3);
+	char		buf1[512],
+				buf2[512];
+
+	sprintf(buf1, "GIN %s lhs", prefix);
+	sprintf(buf2, "GIN %s rhs", prefix);
+	DirectFunctionCall3Coll(dump_array, PG_GET_COLLATION(),
+							PG_GETARG_DATUM(0),
+							CStringGetDatum(buf1),
+							CStringGetDatum("#"));
+	DirectFunctionCall3Coll(dump_array, PG_GET_COLLATION(),
+							PG_GETARG_DATUM(1),
+							CStringGetDatum(buf2),
+							CStringGetDatum("#"));
+	elog(PARRAY_GIN_TRACE, "GIN %s result=%d", prefix, result);
 	PG_RETURN_VOID();
 }
 
@@ -281,21 +337,14 @@ parray_contains_strict(PG_FUNCTION_ARGS)
 	bool		result;
 
 	result = text_array_contains_partial(array2, array1,
-										 PG_GET_COLLATION(), true, true);
-
+										 PG_GET_COLLATION(),
+										 false, false);
 #if TRACE_LIKE_HELL
-	DirectFunctionCall3Coll(dump_array, PG_GET_COLLATION(),
-							PointerGetDatum(array1),
-						  CStringGetDatum("GIN parray_contains_partial lhs"),
-							CStringGetDatum("#"));
-	DirectFunctionCall3Coll(dump_array, PG_GET_COLLATION(),
-							PointerGetDatum(array2),
-						  CStringGetDatum("GIN parray_contains_partial rhs"),
-							CStringGetDatum("#"));
-	elog(PARRAY_GIN_TRACE, "GIN parray_contains_partial result=%d",
-		 result);
+	DirectFunctionCall4Coll(dump_op_args, PG_GET_COLLATION(),
+							PointerGetDatum(array1), PointerGetDatum(array2),
+							BoolGetDatum(result),
+							CStringGetDatum("parray_contains_strict"));
 #endif
-
 	PG_RETURN_BOOL(result);
 }
 
@@ -310,21 +359,58 @@ parray_contains_partial(PG_FUNCTION_ARGS)
 	bool		result;
 
 	result = text_array_contains_partial(array2, array1,
-										 PG_GET_COLLATION(), true, true);
-
+										 PG_GET_COLLATION(),
+										 true, true);
 #if TRACE_LIKE_HELL
-	DirectFunctionCall3Coll(dump_array, PG_GET_COLLATION(),
-							PointerGetDatum(array1),
-						  CStringGetDatum("GIN parray_contains_partial lhs"),
-							CStringGetDatum("#"));
-	DirectFunctionCall3Coll(dump_array, PG_GET_COLLATION(),
-							PointerGetDatum(array2),
-						  CStringGetDatum("GIN parray_contains_partial rhs"),
-							CStringGetDatum("#"));
-	elog(PARRAY_GIN_TRACE, "GIN parray_contains_partial result=%d",
-		 result);
+	DirectFunctionCall4Coll(dump_op_args, PG_GET_COLLATION(),
+							PointerGetDatum(array1), PointerGetDatum(array2),
+							BoolGetDatum(result),
+							CStringGetDatum("parray_contains_partial"));
 #endif
+	PG_RETURN_BOOL(result);
+}
 
+/*
+ * Underlying functions for <@ operator
+ */
+Datum
+parray_contained_strict(PG_FUNCTION_ARGS)
+{
+	ArrayType  *array1 = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *array2 = PG_GETARG_ARRAYTYPE_P(1);
+	bool		result;
+
+	result = text_array_contains_partial(array1, array2,
+										 PG_GET_COLLATION(),
+										 false, true);
+#if TRACE_LIKE_HELL
+	DirectFunctionCall4Coll(dump_op_args, PG_GET_COLLATION(),
+							PointerGetDatum(array1), PointerGetDatum(array2),
+							BoolGetDatum(result),
+							CStringGetDatum("parray_contained_strict"));
+#endif
+	PG_RETURN_BOOL(result);
+}
+
+/*
+ * Underlying functions for <@@ operator
+ */
+Datum
+parray_contained_partial(PG_FUNCTION_ARGS)
+{
+	ArrayType  *array1 = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *array2 = PG_GETARG_ARRAYTYPE_P(1);
+	bool		result;
+
+	result = text_array_contains_partial(array1, array2,
+										 PG_GET_COLLATION(),
+										 true, false);
+#if TRACE_LIKE_HELL
+	DirectFunctionCall4Coll(dump_op_args, PG_GET_COLLATION(),
+							PointerGetDatum(array1), PointerGetDatum(array2),
+							BoolGetDatum(result),
+							CStringGetDatum("parray_contained_partial"));
+#endif
 	PG_RETURN_BOOL(result);
 }
 
@@ -338,9 +424,19 @@ is_valid_strategy(int strategy)
 {
 	return
 		strategy == PARRAY_GIN_STRATEGY_CONTAINS ||
-		strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL;
+		strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY ||
+		strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL ||
+		strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL;
 }
 
+int32 *
+palloc_int32(int32 value)
+{
+	int32	   *p = palloc(sizeof(int32));
+
+	*p = value;
+	return p;
+}
 
 /*
  * TODO document
@@ -351,6 +447,7 @@ trigrams_from_textarray(PG_FUNCTION_ARGS)
 	ArrayType  *items = PG_GETARG_ARRAYTYPE_P(0);
 	int32	   *countTrigrams = (int32 *) PG_GETARG_POINTER(1);
 	bool		useWildcards = (bool) PG_GETARG_BOOL(2);
+	Pointer   **lengthsTrigrams = (Pointer **) PG_GETARG_POINTER(3);
 
 	/*
 	 * Result type, contains int32 datums with all trigrams for all indexed
@@ -384,13 +481,17 @@ trigrams_from_textarray(PG_FUNCTION_ARGS)
 	 */
 	for (indexKey = 0; indexKey < countItemKeys; ++indexKey)
 		if (!itemNullFlags[indexKey])
-			countArrTrigram +=
+			countArrTrigram += 2 +
 				DatumGetInt32(OidFunctionCall1Coll(F_TEXTLEN,
-								PG_GET_COLLATION(), itemKeys[indexKey])) + 2;
+									PG_GET_COLLATION(), itemKeys[indexKey]));
 	keys = (Datum *) palloc(countArrTrigram * sizeof(TRGM));
-	/*elog(PARRAY_GIN_TRACE,
-		 "GIN trigrams_from_textarray allocate %ld items", countArrTrigram);*/
 
+	if (lengthsTrigrams)
+	{
+		*lengthsTrigrams = (Pointer *) palloc0(
+									  (1 + countItemKeys) * sizeof(Pointer));
+		(*lengthsTrigrams)[0] = (Pointer) palloc_int32(countItemKeys);
+	}
 	for (indexKey = 0; indexKey < countItemKeys; ++indexKey)
 	{
 		char	   *pstr;
@@ -405,6 +506,11 @@ trigrams_from_textarray(PG_FUNCTION_ARGS)
 				trg = generate_wildcard_trgm(pstr, strlen(pstr));
 			else
 				trg = generate_trgm(pstr, strlen(pstr));
+
+			if (lengthsTrigrams)
+				(*lengthsTrigrams)[indexKey + 1] =
+					(Pointer) palloc_int32(ARRNELEM(trg));
+
 			ptr = GETARR(trg);
 			for (i = 0; i < ARRNELEM(trg); i++)
 			{
@@ -422,22 +528,28 @@ trigrams_from_textarray(PG_FUNCTION_ARGS)
 	}
 #if TRACE_LIKE_HELL
 	{
-		text *tstr = DatumGetTextP(OidFunctionCall3Coll(F_ARRAY_TO_TEXT_NULL,
-								  PG_GET_COLLATION(),
-								  PointerGetDatum(items),
-								  CStringGetTextDatum("#"),
-								  CStringGetTextDatum("NULL")
-								  ));
+		text	   *tstr;
+
+		tstr = DatumGetTextP(OidFunctionCall3Coll(F_ARRAY_TO_TEXT_NULL,
+												  PG_GET_COLLATION(),
+												  PointerGetDatum(items),
+												  CStringGetTextDatum("#"),
+												  CStringGetTextDatum("NULL")
+												  ));
+
 		elog(PARRAY_GIN_TRACE,
 			 "GIN trigrams_from_textarray: %d items, %s, %d trigrams",
 			 countItemKeys, TextDatumGetCString(tstr), *countTrigrams);
 		for (indexKey = 0; indexKey < countItemKeys; ++indexKey)
 		{
 			elog(PARRAY_GIN_TRACE,
-				 "  trigrams_from_textarray item %d = %s", indexKey,
+				 "  trigrams_from_textarray item %d = %s (%d)", indexKey,
 				 itemNullFlags[indexKey]
-					? "NULL"
-					: (const char*)TextDatumGetCString(itemKeys[indexKey]));
+				 ? "NULL"
+				 : (const char *) TextDatumGetCString(itemKeys[indexKey]),
+				 (lengthsTrigrams
+				  ? *((int32 *) (*lengthsTrigrams)[indexKey + 1])
+				  : -1));
 		}
 		for (i = 0; i < *countTrigrams; ++i)
 		{
@@ -474,11 +586,12 @@ parray_gin_compare(PG_FUNCTION_ARGS)
 
 	int32		result = DatumGetInt32(DirectFunctionCall2Coll(btint4cmp,
 														  PG_GET_COLLATION(),
-							  PointerGetDatum(key1), PointerGetDatum(key2)));
+													   PointerGetDatum(key1),
+													 PointerGetDatum(key2)));
 
 #if TRACE_LIKE_HELL
-	elog(PARRAY_GIN_TRACE, "GIN compare: %d vs %d -> %d",
-		 key1, key2, result);
+/*	elog(PARRAY_GIN_TRACE, "GIN compare: %d vs %d -> %d",
+		 key1, key2, result);*/
 #endif
 
 	PG_RETURN_INT32(result);
@@ -505,11 +618,12 @@ parray_gin_extract_value(PG_FUNCTION_ARGS)
 	elog(PARRAY_GIN_TRACE, "GIN extract_value invoked");
 #endif
 
-	keys = (Datum *) DirectFunctionCall3Coll(trigrams_from_textarray,
-						PG_GET_COLLATION(),
-						PointerGetDatum(itemValue),
-						PointerGetDatum(nkeys),
-						BoolGetDatum(false));
+	keys = (Datum *) DirectFunctionCall4Coll(trigrams_from_textarray,
+											 PG_GET_COLLATION(),
+											 PointerGetDatum(itemValue),
+											 PointerGetDatum(nkeys),
+											 BoolGetDatum(false),
+											 PointerGetDatum(NULL));
 
 	*nullFlags = NULL;
 
@@ -529,9 +643,11 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 	int32	   *nkeys = (int32 *) PG_GETARG_POINTER(1);
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
 	bool	  **pmatch = (bool **) PG_GETARG_POINTER(3);
+	Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
 	bool	  **nullFlags = (bool **) PG_GETARG_POINTER(5);
 
 	Datum	   *keys;
+	bool		is_partial;
 
 #if TRACE_LIKE_HELL
 	elog(PARRAY_GIN_TRACE, "GIN extract_query invoked");
@@ -542,13 +658,17 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 		ereport(ERROR, (errcode(ERRCODE_INVALID_NAME),
 						errmsg("wrong strategy %d", strategy)));
 	}
+	is_partial = strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL ||
+		strategy == PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL;
 
 	/* query is an array of texts, parse it and return trigrams */
-	keys = (Datum *) DirectFunctionCall3Coll(trigrams_from_textarray,
-						   PG_GET_COLLATION(), query, PointerGetDatum(nkeys),
-			 BoolGetDatum(strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL));
+	keys = (Datum *) DirectFunctionCall4Coll(trigrams_from_textarray,
+											 PG_GET_COLLATION(),
+											 query,
+											 PointerGetDatum(nkeys),
+											 BoolGetDatum(is_partial),
+											 PointerGetDatum(extra_data));
 	*nullFlags = NULL;
-
 	*pmatch = NULL;
 
 	PG_RETURN_POINTER(keys);
@@ -570,6 +690,7 @@ parray_gin_consistent(PG_FUNCTION_ARGS)
 
 	/* Datum query = PG_GETARG_DATUM(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
+	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
 	bool	   *recheck = (bool *) PG_GETARG_POINTER(5);
 
 	bool		result = false;
@@ -581,11 +702,43 @@ parray_gin_consistent(PG_FUNCTION_ARGS)
 						errmsg("wrong strategy %d", strategy)));
 	}
 	*recheck = true;
-	/* all */
-	result = true;
-	for (i = 0; i < nkeys; ++i)
-		if (!check[i])
-			result = false;
+
+	if (strategy == PARRAY_GIN_STRATEGY_CONTAINS ||
+		strategy == PARRAY_GIN_STRATEGY_CONTAINS_PARTIAL)
+	{
+		/* all */
+		result = true;
+		for (i = 0; i < nkeys; ++i)
+			if (!check[i])
+				result = false;
+	}
+	else
+	{
+		int32	  **positions = (int32 **) extra_data;
+		int			extent,
+					prev = 0;
+
+		/*
+		 * Contained-by query is very suspicious because it triggers even if a
+		 * single key from a query is found in a indexed item. Recheck should
+		 * drop all false positive items
+		 *
+		 * Check each extent described by extra_data (= each query element)
+		 */
+		if (!extra_data)
+			ereport(ERROR, (errcode(ERRCODE_INVALID_NAME),
+					   errmsg("not enough data for strategy %d", strategy)));
+		for (extent = 0; extent < *(positions[0]) - 1; ++extent)
+		{
+			result = true;
+			for (i = prev; i < prev + *(positions[extent + 1]); ++i)
+				if (!check[i])
+					result = false;
+			if (result)
+				break;
+			prev += *(positions[extent]);
+		}
+	}
 
 #if TRACE_LIKE_HELL
 	{

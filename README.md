@@ -25,7 +25,7 @@ and registered in a database.
 The easisest method to get and install an extension from PGXN network.
 PGXN client downloads and builds the extension.
 
-    pgxn --pg_config <postgresql_install_dir>/bin/pg_config install parray_gin
+		pgxn --pg_config <postgresql_install_dir>/bin/pg_config install parray_gin
 
 PGXN client itself is available at [github](https://github.com/dvarrazzo/pgxnclient) and
 can be installed with your favourite method, i.e. `easy_install pgxnclient`.
@@ -38,23 +38,23 @@ an extension on an almost any UNIX platform (Linux, Solaris, OS X).
 
 Compilation:
 
-    gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config
+		gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config
 
 Installation (as superuser):
 
-    gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config install
+		gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config install
 
 PostgreSQL server must be restarted. 
 
 To uninstall extension completely you may use this command (as superuser):
 
-    gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config uninstall
+		gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config uninstall
 
 Project contains SQL tests that can be launched on PostgreSQL with installed extension.
 Tests are performed on a dynamically created database with a specified user (with the 
 appropriated permissions - create database, for example):
 
-    gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config PGUSER=postgres installcheck
+		gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config PGUSER=postgres installcheck
 
 #### Manually
 
@@ -64,15 +64,15 @@ Or if you use Windows (use MSVC 2008 for Postgres 9.1 and MSVC 2010 for Postgres
 
 Copy library to the PostgreSQL library directory:
 
-    cp parray_gin.so `<postgresql_install_dir>/bin/pg_config --pkglibdir` 
+		cp parray_gin.so `<postgresql_install_dir>/bin/pg_config --pkglibdir` 
 
 Copy control file to the extension directory:
-    
-    cp parray_gin.control `<postgresql_install_dir>/bin/pg_config --sharedir`/extension
+		
+		cp parray_gin.control `<postgresql_install_dir>/bin/pg_config --sharedir`/extension
 
 Copy SQL prototypes file to the extension directory:
-    
-    cp parray_gin--<version>.sql `<postgresql_install_dir>/bin/pg_config --sharedir`/extension
+		
+		cp parray_gin--<version>.sql `<postgresql_install_dir>/bin/pg_config --sharedir`/extension
 
 To uninstall extension just remove files you copied before.
 
@@ -82,7 +82,7 @@ Extension must be previously installed to a PostgreSQL directory.
 
 Extension is created in a particular database (as superuser):
 
-    create extension parray_gin;
+		create extension parray_gin;
 
 It creates all the functions, operators and other stuff from extension.
 Note that you must restart a server if a previous library was already installed
@@ -90,7 +90,7 @@ at the same place. In other words, always restart to be sure.
 
 To drop an extension use:
 
-    drop extension parray_gin cascade;
+		drop extension parray_gin cascade;
 
 
 License information
@@ -99,3 +99,4 @@ License information
 You can use any code from this project under the terms of [PostgreSQL License](http://www.postgresql.org/about/licence/).
 
 Please consult with the COPYING for license information.
+<!-- vim: set noexpandtab tabstop=4 shiftwidth=4 colorcolumn=80: -->

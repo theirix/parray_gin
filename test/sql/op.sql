@@ -58,5 +58,19 @@ select (array['foo', 'boo', 'baz']) @@> array['%ooz%'];
 -- t
 select (array['food', 'booze', 'baz']) @@> array['%ooz%'];
 
+
+-- t
+select array['foo', 'cow'] <@@ array['f%', 'cow'];
+-- t
+select array['foo', 'cow'] <@@ array['cow', 'f%'];
+-- f
+select array['foo', 'cow'] <@@ array['qux', 'f%'];
+-- t
+select array['foo', 'cow'] <@@ array['f%', 'cow', 'baz'];
+-- t
+select array['foo'] <@@ array['f%', 'c%'];
+-- f
+select array['cow'] <@@ array['f%'];
+
 \t off
 \pset format aligned

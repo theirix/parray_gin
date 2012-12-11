@@ -67,6 +67,17 @@ select count(*) from test_table where val @> array['%'];
 -- 0
 select count(*) from test_table where val @@> array['%'];
 
+-- 3
+select count(*) from test_table where val <@ array['foo4', 'bar4', 'baz4'];
+-- 3
+select count(*) from test_table where val <@ array['foo4', 'bar4', 'baz4', 'qux'];
+-- 32
+select count(*) from test_table where val <@@ array['foo%', 'bar%', 'baz%'];
+-- 2
+select count(*) from test_table where val <@@ array['foo4', 'baz%', 'bar4%e'];
+-- 0
+select count(*) from test_table where val <@@ array['qux'];
+
 set enable_seqscan to on;
 
 \t off
