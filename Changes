@@ -1,5 +1,11 @@
 Revision history for PostgreSQL extension.
 
+1.2.0   2012-12-11T220000
+      - Used trigram index
+      - Allowed to use like expressions in the query
+      - Allowed to index null array items
+      - Reworked all array match operators
+
 1.1.3   2012-10-27T010000
       - Allowed to build on Windows
 
