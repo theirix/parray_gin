@@ -10,6 +10,9 @@
 #include "catalog/pg_type.h"
 #include "tsearch/ts_locale.h"
 
+#if PG_VERSION_NUM >= 90500
+#include "utils/pg_crc.h"
+#endif
 
 float4		trgm_limit = 0.3f;
 
@@ -119,9 +122,15 @@ cnt_trigram(trgm *tptr, char *str, int bytelen)
 	{
 		pg_crc32	crc;
 
+#if PG_VERSION_NUM >= 90500
+		INIT_LEGACY_CRC32(crc);
+		COMP_LEGACY_CRC32(crc, str, bytelen);
+		FIN_LEGACY_CRC32(crc);
+#else
 		INIT_CRC32(crc);
 		COMP_CRC32(crc, str, bytelen);
 		FIN_CRC32(crc);
+#endif
 
 		/*
 		 * use only 3 upper bytes from crc, hope, it's good enough hashing
