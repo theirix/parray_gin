@@ -645,6 +645,7 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 	bool	  **pmatch = (bool **) PG_GETARG_POINTER(3);
 	Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
 	bool	  **nullFlags = (bool **) PG_GETARG_POINTER(5);
+	int32     *searchMode = (int32 *) PG_GETARG_POINTER(6);
 
 	Datum	   *keys;
 	bool		is_partial;
@@ -670,6 +671,12 @@ parray_gin_extract_query(PG_FUNCTION_ARGS)
 											 PointerGetDatum(extra_data));
 	*nullFlags = NULL;
 	*pmatch = NULL;
+
+	/*
+	 * If no trigram was extracted then we have to scan all the index.
+	 */
+	if (*nkeys == 0)
+		*searchMode = GIN_SEARCH_MODE_ALL;
 
 	PG_RETURN_POINTER(keys);
 }

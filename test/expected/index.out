@@ -71,7 +71,7 @@ select count(*) from test_table where val @> array['%'];
 0
 -- 0
 select count(*) from test_table where val @@> array['%'];
-0
+32
 -- 3
 select count(*) from test_table where val <@ array['foo4', 'bar4', 'baz4'];
 3
