@@ -56,6 +56,12 @@ appropriated permissions - create database, for example):
 
 		gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config PGUSER=postgres installcheck
 
+Sometimes it's needed to add platform-specific flags for building. For example,
+to build with ICU provided by homebrew you should add to `Makefile`:
+
+		PG_CPPFLAGS = "-I/usr/local/opt/icu4c/include"
+		SHLIB_LINK =  "-L/usr/local/opt/icu4c/lib"
+
 #### Manually
 
 Use this method if you have a precompiled extension and do not want to install this with help of PGXS.
