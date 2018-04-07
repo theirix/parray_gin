@@ -1,5 +1,5 @@
 EXTENSION    = parray_gin
-EXTVERSION   = 1.2.0
+EXTVERSION   = 1.3.0
 MODULE_big   = $(EXTENSION)
 OBJS         = $(patsubst %.c,%.o,$(wildcard src/*.c))
 DOCS         = $(wildcard doc/*.md)
