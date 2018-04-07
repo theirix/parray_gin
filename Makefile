@@ -2,7 +2,6 @@ EXTENSION    = parray_gin
 EXTVERSION   = 1.2.0
 MODULE_big   = $(EXTENSION)
 OBJS         = $(patsubst %.c,%.o,$(wildcard src/*.c))
-DATA         = $(wildcard sql/*--*.sql) sql/$(EXTENSION)--$(EXTVERSION).sql
 DOCS         = $(wildcard doc/*.md)
 TESTS        = $(wildcard test/sql/*.sql)
 REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))

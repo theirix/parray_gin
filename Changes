@@ -1,5 +1,9 @@
 Revision history for PostgreSQL extension.
 
+1.3.0   2018-04-07T220000
+      - Compile under 9.x and 10.x
+      - Bug #1, when the query contains no trigrams. 
+
 1.2.0   2012-12-11T220000
       - Used trigram index
       - Allowed to use like expressions in the query
