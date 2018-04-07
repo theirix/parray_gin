@@ -8,6 +8,7 @@ REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
 REGRESS_OPTS += --inputdir=test
 PG_CONFIG    := pg_config
 #PG_CPPFLAGS  = -g -O0
+DATA = $(wildcard sql/*--*.sql)
 EXTRA_CLEAN  = sql/$(EXTENSION)--$(EXTVERSION).sql
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
