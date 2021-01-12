@@ -21,7 +21,9 @@
 #include "catalog/pg_type.h"
 #include "access/gin.h"
 #include "access/skey.h"
+#if PG_VERSION_NUM < 130000
 #include "access/tuptoaster.h"
+#endif
 #include "utils/fmgroids.h"
 #include "utils/builtins.h"
 #include "utils/numeric.h"
