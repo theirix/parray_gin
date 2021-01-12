@@ -3,7 +3,7 @@ GIN partial array match for PostgreSQL
 
 Extension `parray_gin` provides GIN index and operator support for arrays with partial match.
 
-Extension supports PostgreSQL 9.1 through 10.
+Extension supports PostgreSQL 9.1 through 13.
 
 Usage
 -----
@@ -54,6 +54,7 @@ Project contains SQL tests that can be launched on PostgreSQL with installed ext
 Tests are performed on a dynamically created database with a specified user (with the 
 appropriated permissions - create database, for example):
 
+		gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config install
 		gmake PG_CONFIG=<postgresql_install_dir>/bin/pg_config PGUSER=postgres installcheck
 
 Sometimes it's needed to add platform-specific flags for building. For example,
