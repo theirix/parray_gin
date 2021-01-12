@@ -1,5 +1,9 @@
 Revision history for PostgreSQL extension.
 
+1.3.2   2021-01-12T170000
+      - Remove missing include in PostgreSQL 13
+      - Updated test instructions
+
 1.3.1   2018-04-07T220100
       - Fixed sql file installation
 
