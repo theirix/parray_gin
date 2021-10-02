@@ -57,6 +57,13 @@ PG_MODULE_MAGIC;
 /* <@@ operator strategy */
 #define PARRAY_GIN_STRATEGY_CONTAINED_BY_PARTIAL 10
 
+/* oids changed in postgres 14 */
+#if PG_VERSION_NUM < 140000
+#define OID_ARRAY_TO_TEXT_NULL F_ARRAY_TO_TEXT_NULL
+#else
+#define OID_ARRAY_TO_TEXT_NULL F_ARRAY_TO_STRING_ANYARRAY_TEXT_TEXT
+#endif
+
 /*
  * Internal functions declarations
  */
@@ -295,7 +302,7 @@ dump_array(PG_FUNCTION_ARGS)
 	text	   *tstr;
 	int			nelems;
 
-	tstr = DatumGetTextP(OidFunctionCall3Coll(F_ARRAY_TO_TEXT_NULL,
+	tstr = DatumGetTextP(OidFunctionCall3Coll(OID_ARRAY_TO_TEXT_NULL,
 											  PG_GET_COLLATION(),
 											  PointerGetDatum(array),
 											  CStringGetTextDatum(delim),
@@ -533,7 +540,7 @@ trigrams_from_textarray(PG_FUNCTION_ARGS)
 	{
 		text	   *tstr;
 
-		tstr = DatumGetTextP(OidFunctionCall3Coll(F_ARRAY_TO_TEXT_NULL,
+		tstr = DatumGetTextP(OidFunctionCall3Coll(OID_ARRAY_TO_TEXT_NULL,
 												  PG_GET_COLLATION(),
 												  PointerGetDatum(items),
 												  CStringGetTextDatum("#"),
