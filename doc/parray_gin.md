@@ -116,9 +116,7 @@ these operators.
 Author
 ------
 
-Copyright (c) 2012, Con Certeza LLC. All Right Reserved.
-
-Developed by [Eugene Seliverstov](theirix@concerteza.ru)
+Developed and maintaned by [Eugene Seliverstov](theirix@gmail.com)
 
 Copyright and License
 ---------------------

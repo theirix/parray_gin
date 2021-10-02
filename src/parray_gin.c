@@ -4,7 +4,8 @@
  *	 GIN support for arrays with partial match
  *
  * Copyright (c) 2012, Con Certeza
- * Author: irix <theirix@concerteza.ru>
+ * Copyright (c) 2013-2021, theirix
+ * Author: theirix <theirix@gmail.com>
  *
  * GIN index heavily uses trigram implementation from pg_trgm contrib
  * module. Files trgm.c and trgm.h are copied without changes 
