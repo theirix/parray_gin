@@ -3,12 +3,12 @@ GIN partial array match for PostgreSQL
 
 Extension `parray_gin` provides GIN index and operator support for arrays with partial match.
 
-Extension supports PostgreSQL 9.1 through 13.
+Extension supports PostgreSQL 9.1 through 14.
 
 Usage
 -----
 
-Please consult with doc/parray_gin.md for a function and operator reference.
+Please consult with [docs](doc/parray_gin.md) for a function and operator reference.
 
 On PGXN please click on extension from _Extensions_ section to view reference.
 
@@ -32,7 +32,7 @@ can be installed with your favourite method, i.e. `easy_install pgxnclient`.
 
 #### Using PGXS makefiles
 
-C extension are best built and installed using [PGXS](http://www.postgresql.org/docs/9.1/static/extend-pgxs.html).
+C extension are best built and installed using [PGXS](https://www.postgresql.org/docs/current/extend-pgxs.html).
 PGXS ensures that make is performed with needed compiler and flags. You only need GNU make and a compiler to build
 an extension on an almost any UNIX platform (Linux, Solaris, OS X).
 
