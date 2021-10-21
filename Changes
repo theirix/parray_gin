@@ -1,5 +1,11 @@
 Revision history for PostgreSQL extension.
 
+1.3.4   2021-10-21T200000
+      - Support upgrading (currently from 1.3.1)
+
+1.3.3   2021-10-02T110000
+      - Support PostgreSQL 14
+
 1.3.2   2021-01-12T170000
       - Remove missing include in PostgreSQL 13
       - Updated test instructions
