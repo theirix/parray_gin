@@ -28,7 +28,6 @@
 #include "utils/fmgroids.h"
 #include "utils/builtins.h"
 #include "utils/numeric.h"
-#include "utils/int8.h"
 #include "utils/timestamp.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
