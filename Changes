@@ -1,5 +1,8 @@
 Revision history for PostgreSQL extension.
 
+1.3.7   2022-10-24T103000
+      - Support upgrading (currently from 1.3.4)
+
 1.3.6   2022-10-24T100000
       - Support upgrading (currently from 1.3.4)
 
