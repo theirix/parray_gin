@@ -13,6 +13,7 @@
 #if PG_VERSION_NUM >= 90500
 #include "utils/pg_crc.h"
 #endif
+#include "utils/array.h"
 
 float4		trgm_limit = 0.3f;
 
