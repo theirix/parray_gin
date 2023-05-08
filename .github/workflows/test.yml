@@ -22,4 +22,4 @@ jobs:
         run: docker build . --file docker/Dockerfile --tag "pgxtest:${{ matrix.pg-version }}" --build-arg "PGVERSION=${{ matrix.pg-version }}"
 
       - name: Test
-        run: docker run --rm -v `pwd`:/src "pgxtest:${{ matrix.pg-version }}" /test.sh
+        run: docker run --rm -v `pwd`:/workspace "pgxtest:${{ matrix.pg-version }}" /test.sh

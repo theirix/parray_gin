@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eux
+cp -av /workspace/* .
 make
 sudo make install
 set +e
