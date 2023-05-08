@@ -33,6 +33,8 @@ COPY docker/entrypoint.sh /entrypoint.sh
 COPY docker/test.sh /test.sh
 RUN chmod a+x /entrypoint.sh /test.sh
 
+RUN mkdir /src && chown postgres /src
+
 USER postgres
 
 RUN initdb
