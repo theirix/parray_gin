@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Build the Docker image
-        run: docker build . --file docker/Dockerfile --tag "pgxtest:${{ matrix.pg-version }}" --build-arg ${{ matrix.pg-version }}
+        run: docker build . --file docker/Dockerfile --tag "pgxtest:${{ matrix.pg-version }}" --build-arg "PGVERSION=${{ matrix.pg-version }}"
 
       - name: Test
         run: docker run --rm -v `pwd`:/src "pgxtest:${{ matrix.pg-version }}" /test.sh
