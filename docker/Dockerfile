@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install core packages
 RUN apt-get update && \
     apt-get install --no-install-recommends -y sudo curl gnupg tzdata locales lsb-release ca-certificates \
-    make gcc libssl-dev libkrb5-dev libicu-dev
+    make gcc libssl-dev libkrb5-dev libicu-dev libdpkg-perl
 
 # Configure repository
 RUN mkdir -p /etc/apt/keyrings && \
