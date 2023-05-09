@@ -2,6 +2,7 @@ FROM debian:bullseye
 
 # PostgreSQL version (like 15)
 ARG PGVERSION
+ARG PGCHANNEL=bullseye-pgdg
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -14,8 +15,12 @@ RUN apt-get update && \
 RUN mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
     gpg --dearmor -o /etc/apt/keyrings/postgres.gpg && \
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/postgres.gpg] http://apt.postgresql.org/pub/repos/apt/ bullseye-pgdg main ${PGVERSION}" | \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/postgres.gpg] http://apt.postgresql.org/pub/repos/apt/ ${PGCHANNEL} main ${PGVERSION}" | \
     tee -a /etc/apt/sources.list.d/postgres.list
+
+# Prefer packages from Postgres repository
+RUN echo "Package: *\nPin: release o=apt.postgresql.org\nPin-Priority: 900" | \
+    tee -a /etc/apt/preferences.d/pgdg.pref
 
 # Install PostgreSQL
 RUN apt-get update && \
