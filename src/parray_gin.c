@@ -318,11 +318,10 @@ dump_op_args(PG_FUNCTION_ARGS)
 {
 	bool		result = PG_GETARG_BOOL(2);
 	const char *prefix = PG_GETARG_CSTRING(3);
-	char		buf1[512],
-				buf2[512];
+	char		buf1[1024], buf2[1024];
 
-	sprintf(buf1, "GIN %s lhs", prefix);
-	sprintf(buf2, "GIN %s rhs", prefix);
+	snprintf(buf1, sizeof(buf1)-1, "GIN %s lhs", prefix);
+	snprintf(buf2, sizeof(buf2)-1, "GIN %s rhs", prefix);
 	DirectFunctionCall3Coll(dump_array, PG_GET_COLLATION(),
 							PG_GETARG_DATUM(0),
 							CStringGetDatum(buf1),
