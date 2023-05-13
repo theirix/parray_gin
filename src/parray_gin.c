@@ -465,7 +465,7 @@ trigrams_from_textarray(PG_FUNCTION_ARGS)
 
 	int			indexKey;
 	size_t		countArrTrigram = 0;
-	int			i;
+	size_t		i;
 
 	Datum	   *itemKeys;
 	bool	   *itemNullFlags = NULL;
@@ -523,7 +523,7 @@ trigrams_from_textarray(PG_FUNCTION_ARGS)
 			for (i = 0; i < ARRNELEM(trg); i++)
 			{
 				/* grow on need */
-				if (*countTrigrams >= countArrTrigram)
+				if (*countTrigrams >= (int32)countArrTrigram)
 				{
 					countArrTrigram = (size_t) (1.4 * countArrTrigram);
 					keys = repalloc(keys, countArrTrigram);

@@ -505,7 +505,7 @@ show_trgm(PG_FUNCTION_ARGS)
 	Datum	   *d;
 	ArrayType  *a;
 	trgm	   *ptr;
-	int			i;
+	size_t		i;
 
 	trg = generate_trgm(VARDATA(in), VARSIZE(in) - VARHDRSZ);
 	d = (Datum *) palloc(sizeof(Datum) * (1 + ARRNELEM(trg)));
