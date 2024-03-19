@@ -308,7 +308,7 @@ dump_array(PG_FUNCTION_ARGS)
 											  CStringGetTextDatum("NULL")));
 	nelems = ArrayGetNItems(ARR_NDIM(array), ARR_DIMS(array));
 	elog(PARRAY_GIN_TRACE, "%s, count %d, items: %s",
-		 prefix, nelems, TextDatumGetCString(tstr));
+		 prefix, nelems, text_to_cstring(tstr));
 
 	PG_RETURN_VOID();
 }
@@ -589,13 +589,12 @@ trigrams_from_textarray(PG_FUNCTION_ARGS)
 Datum
 parray_gin_compare(PG_FUNCTION_ARGS)
 {
-	int32		key1 = PG_GETARG_INT32(0);
-	int32		key2 = PG_GETARG_INT32(1);
+	Datum		datum1 = PG_GETARG_DATUM(0);
+	Datum		datum2 = PG_GETARG_DATUM(1);
 
 	int32		result = DatumGetInt32(DirectFunctionCall2Coll(btint4cmp,
-														  PG_GET_COLLATION(),
-													   PointerGetDatum(key1),
-													 PointerGetDatum(key2)));
+										PG_GET_COLLATION(),
+										datum1, datum2));
 
 #if TRACE_LIKE_HELL
 /*	elog(PARRAY_GIN_TRACE, "GIN compare: %d vs %d -> %d",
