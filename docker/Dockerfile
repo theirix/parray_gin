@@ -1,8 +1,8 @@
-FROM debian:bullseye
+FROM debian:bookworm
 
 # PostgreSQL version (like 15)
 ARG PGVERSION
-ARG PGCHANNEL=bullseye-pgdg
+ARG PGCHANNEL=bookworm-pgdg
 
 ENV DEBIAN_FRONTEND=noninteractive
 
