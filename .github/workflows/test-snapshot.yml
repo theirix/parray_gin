@@ -7,7 +7,7 @@ on:
     branches: [ "master" ]
 
 env:
-  PG_SNAPSHOT_VERSION: "17"
+  PG_SNAPSHOT_VERSION: "18"
 
 jobs:
   build:
