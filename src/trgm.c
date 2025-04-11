@@ -7,6 +7,7 @@
 
 #include "trgm.h"
 
+#include "catalog/pg_collation_d.h"
 #include "catalog/pg_type.h"
 #include "tsearch/ts_locale.h"
 
@@ -14,6 +15,7 @@
 #include "utils/pg_crc.h"
 #endif
 #include "utils/array.h"
+#include "utils/formatting.h"
 
 float4		trgm_limit = 0.3f;
 
@@ -80,7 +82,7 @@ unique_array(trgm *a, int len)
 }
 
 #ifdef KEEPONLYALNUM
-#define iswordchr(c)	(t_isalpha(c) || t_isdigit(c))
+#define iswordchr(c)	(t_isalnum(c))
 #else
 #define iswordchr(c)	(!t_isspace(c))
 #endif
@@ -221,7 +223,7 @@ generate_trgm(char *str, int slen)
 	while ((bword = find_word(eword, slen - (eword - str), &eword, &charlen)) != NULL)
 	{
 #ifdef IGNORECASE
-		bword = lowerstr_with_len(bword, eword - bword);
+		bword = str_tolower(bword, eword - bword, DEFAULT_COLLATION_OID);
 		bytelen = strlen(bword);
 #else
 		bytelen = eword - bword;
@@ -449,7 +451,7 @@ generate_wildcard_trgm(const char *str, int slen)
 									  buf, &bytelen, &charlen)) != NULL)
 	{
 #ifdef IGNORECASE
-		buf2 = lowerstr_with_len(buf, bytelen);
+		buf2 = str_tolower(buf, bytelen, DEFAULT_COLLATION_OID);
 		bytelen = strlen(buf2);
 #else
 		buf2 = buf;
