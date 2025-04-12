@@ -1,5 +1,9 @@
 Revision history for PostgreSQL extension.
 
+1.4.0   2025-04-12T103000
+      - Continuous integration on snapshots
+      - Support PostgreSQL 18
+
 1.3.9   2024-03-19T103000
       - Support building with clang on Debian 12
 

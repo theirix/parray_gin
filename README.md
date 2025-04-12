@@ -3,7 +3,7 @@ GIN partial array match for PostgreSQL
 
 Extension `parray_gin` provides GIN index and operator support for arrays with partial match.
 
-Extension supports PostgreSQL 9.1 through 17.
+Extension supports PostgreSQL 9.1 through 18.
 
 Usage
 -----
