@@ -9,7 +9,7 @@ on:
     - cron: '0 0 * * 5'
 
 env:
-  PG_SNAPSHOT_VERSION: "18"
+  PG_SNAPSHOT_VERSION: "19"
 
 jobs:
   build:
