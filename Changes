@@ -1,5 +1,8 @@
 Revision history for PostgreSQL extension.
 
+1.5.0   2026-04-19T103000
+      - Support PostgreSQL 19
+
 1.4.0   2025-04-12T103000
       - Continuous integration on snapshots
       - Support PostgreSQL 18
