@@ -6,7 +6,7 @@ Installing
 
 		CREATE EXTENSION parray_gin;
 
-Extension is compatible with PostgreSQL 9.1 through 14.
+Extension is compatible with PostgreSQL 9.1 through 19.
 Description
 -----------
 
