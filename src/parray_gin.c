@@ -129,7 +129,7 @@ text_array_contains_partial(ArrayType *array1, ArrayType *array2,
 	bool		typbyval;
 	char		typalign;
 	char	   *ptr1;
-	bits8	   *bitmap1;
+	uint8	   *bitmap1;
 	int			bitmask;
 	int			i;
 	int			j;
