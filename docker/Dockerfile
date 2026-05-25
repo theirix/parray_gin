@@ -3,19 +3,23 @@ FROM debian:bookworm
 # PostgreSQL version (like 15)
 ARG PGVERSION
 ARG PGCHANNEL=bookworm-pgdg
+ARG PGCHANNELBASE=bookworm-pgdg
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install core packages
 RUN apt-get update && \
     apt-get install --no-install-recommends -y sudo curl gnupg tzdata locales lsb-release ca-certificates \
-    make gcc libssl-dev libkrb5-dev libicu-dev libdpkg-perl
+    make gcc libssl-dev libkrb5-dev libicu-dev libdpkg-perl && \
+    rm -rf /var/lib/apt/lists/*
 
 # Configure repository
 RUN mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
     gpg --dearmor -o /etc/apt/keyrings/postgres.gpg && \
     echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/postgres.gpg] http://apt.postgresql.org/pub/repos/apt/ ${PGCHANNEL} main ${PGVERSION}" | \
+    tee -a /etc/apt/sources.list.d/postgres.list && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/postgres.gpg] http://apt.postgresql.org/pub/repos/apt/ ${PGCHANNELBASE} main" | \
     tee -a /etc/apt/sources.list.d/postgres.list
 
 # Prefer packages from Postgres repository
